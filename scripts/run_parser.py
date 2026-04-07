@@ -60,7 +60,7 @@ async def main(dry_run: bool = False) -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     print("\nСинхронизация с БД ...")
-    result = await sync_catalog(session_factory)
+    result = await sync_catalog(session_factory, parsed=items)
     await engine.dispose()
 
     print(f"Готово: добавлено {result.added}, обновлено {result.updated}, "

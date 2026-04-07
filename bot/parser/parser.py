@@ -36,7 +36,13 @@ _OPTION_RE = re.compile(
 _STORE_RE = re.compile(
     r"recid:'(?P<recid>\d+)',storepart:'(?P<storepart>\d+)'"
 )
+PRIMARY_RECID = "1794845301"
+PRIMARY_STOREPART = "586011282611"
 _EXACT_DURATION_PATTERNS = [
+    re.compile(
+        r"\d{1,2}\+\s*\|\s*(\d{1,3}\s*мин(?:ут(?:а|ы)?)?\.?)\s*\|\s*(?:180|360)°",
+        re.IGNORECASE,
+    ),
     re.compile(
         r"(?:продолжительность|длительность|хронометраж)[^0-9]{0,40}(\d{1,3}\s*(?:минут(?:а|ы)?|мин\.?))",
         re.IGNORECASE,
@@ -169,6 +175,7 @@ def _normalize_exact_duration(value: str | None) -> str | None:
         return None
     normalized = re.sub(r"\s+", " ", normalized)
     normalized = normalized.replace("мин.", "минут")
+    normalized = re.sub(r"\bмин\b", "минут", normalized)
     return normalized
 
 
@@ -250,16 +257,6 @@ def _normalize_age_rating(values: list[str]) -> str | None:
     return values[0][:20]
 
 
-def _parse_partuids(raw_value: str | None) -> list[str]:
-    if not raw_value:
-        return []
-    try:
-        values = json.loads(raw_value)
-    except json.JSONDecodeError:
-        return []
-    return [str(value) for value in values]
-
-
 async def _fetch_products_for_block(recid: str, storepart: str) -> tuple[int, list[dict]]:
     products: list[dict] = []
     slice_num = 1
@@ -303,43 +300,17 @@ async def parse_catalog() -> list[ParsedItem]:
             return []
 
         logger.info("Парсер: найдено %d стартовых блоков каталога", len(store_blocks))
-
-        discovered_blocks = list(store_blocks)
-        seen_blocks: set[tuple[str, str]] = set()
-        block_payloads: dict[tuple[str, str], tuple[int, str | None, list[dict]]] = {}
-        idx = 0
-
-        while idx < len(discovered_blocks):
-            recid, storepart, category = discovered_blocks[idx]
-            idx += 1
-            block_key = (recid, storepart)
-            if block_key in seen_blocks:
-                continue
-            seen_blocks.add(block_key)
-
-            total, raw_products = await _fetch_products_for_block(recid, storepart)
-            logger.info(
-                "Парсер: блок recid=%s storepart=%s category=%s вернул %d/%d позиций",
-                recid, storepart, category or "—", len(raw_products), total,
-            )
-            block_payloads[block_key] = (total, category, raw_products)
-
-            for product in raw_products:
-                for extra_storepart in _parse_partuids(product.get("partuids")):
-                    extra_key = (recid, extra_storepart)
-                    if extra_key not in seen_blocks:
-                        discovered_blocks.append((recid, extra_storepart, None))
-
-        if not block_payloads:
-            return []
-
-        primary_key, (primary_total, primary_category, primary_products) = max(
-            block_payloads.items(),
-            key=lambda item: item[1][0],
+        primary_category = next(
+            (category for recid, _, category in store_blocks if recid == PRIMARY_RECID),
+            None,
+        )
+        primary_total, primary_products = await _fetch_products_for_block(
+            PRIMARY_RECID,
+            PRIMARY_STOREPART,
         )
         logger.info(
             "Парсер: выбран основной каталог recid=%s storepart=%s total=%d",
-            primary_key[0], primary_key[1], primary_total,
+            PRIMARY_RECID, PRIMARY_STOREPART, primary_total,
         )
 
         category_name = primary_category or "Каталог"

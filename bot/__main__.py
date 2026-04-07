@@ -14,7 +14,6 @@ from bot.handlers.freetext import router as freetext_router
 from bot.handlers.lead import router as lead_router
 from bot.handlers.start import router as start_router
 from bot.middleware import DbSessionMiddleware
-from bot.parser.scheduler import create_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,16 +38,8 @@ async def main() -> None:
     # freetext_router последним: ловит всё, что не поймали выше
     dp.include_router(freetext_router)
 
-    # Планировщик парсинга — ежедневно в 03:00 МСК
-    scheduler = create_scheduler(session_factory)
-    scheduler.start()
-    logger.info("Планировщик запущен (следующий парсинг: ежедневно в 03:00 МСК)")
-
-    try:
-        logger.info("Bot started (polling)")
-        await dp.start_polling(bot)
-    finally:
-        scheduler.shutdown(wait=False)
+    logger.info("Bot started (polling)")
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":

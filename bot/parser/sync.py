@@ -54,14 +54,18 @@ async def _get_or_create_category(
     return cat
 
 
-async def sync_catalog(session_factory: async_sessionmaker) -> SyncResult:
+async def sync_catalog(
+    session_factory: async_sessionmaker,
+    parsed: list[ParsedItem] | None = None,
+) -> SyncResult:
     """
     Запускает парсинг и синхронизирует результат с БД.
     Возвращает SyncResult с количеством изменений.
     """
     result = SyncResult()
 
-    parsed = await parse_catalog()
+    if parsed is None:
+        parsed = await parse_catalog()
     if not parsed:
         logger.warning("Синхронизация: парсер вернул 0 позиций — пропускаем обновление БД")
         result.errors = 1
