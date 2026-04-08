@@ -156,7 +156,7 @@ async def franchise_support(callback: CallbackQuery, session) -> None:
 # Подраздел: Наши преимущества
 # ---------------------------------------------------------------------------
 
-@router.callback_query(F.data.in_({"franchise:advantages", "franchise:market"}))
+@router.callback_query(F.data == "franchise:advantages")
 async def franchise_advantages(callback: CallbackQuery) -> None:
     await show_text_screen(
         callback,

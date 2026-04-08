@@ -18,12 +18,14 @@
 from pathlib import Path
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, FSInputFile, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 
 from bot.config import settings
+from bot.keyboards.admin import AdminLeadsCb
+from bot.repositories.analytics import log_event
 from bot.keyboards.lead import (
     after_submit_keyboard,
     confirm_keyboard,
@@ -67,6 +69,7 @@ WELCOME_TEXT = (
 async def start_booking(callback: CallbackQuery, state: FSMContext, session) -> None:
     item_id = int(callback.data.split(":")[2])
     item = await get_item_by_id(session, item_id)
+    await log_event(session, callback.from_user.id, "start_lead_form", entity_type="lead_type", payload_json='{"type":"booking"}')
 
     screen = await show_text_screen(
         callback,
@@ -90,7 +93,8 @@ async def start_booking(callback: CallbackQuery, state: FSMContext, session) -> 
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data == "lead:franchise")
-async def start_franchise(callback: CallbackQuery, state: FSMContext) -> None:
+async def start_franchise(callback: CallbackQuery, state: FSMContext, session) -> None:
+    await log_event(session, callback.from_user.id, "start_lead_form", entity_type="lead_type", payload_json='{"type":"franchise"}')
     screen = await show_text_screen(
         callback,
         format_step_prompt(LeadForm.name, lead_type=LeadType.franchise),
@@ -112,7 +116,8 @@ async def start_franchise(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "contact")
 @router.message(Command("contact"))
-async def start_contact(event, state: FSMContext) -> None:
+async def start_contact(event, state: FSMContext, session) -> None:
+    await log_event(session, event.from_user.id, "start_lead_form", entity_type="lead_type", payload_json='{"type":"contact"}')
     if isinstance(event, CallbackQuery):
         screen = await show_text_screen(
             event,
@@ -310,18 +315,26 @@ async def step_submit(callback: CallbackQuery, state: FSMContext, session, bot: 
         preferred_time=data.get("preferred_time"),
         city=data.get("city"),
     )
+    await log_event(session, callback.from_user.id, "submit_lead", entity_type="lead", entity_id=lead.id)
 
     await _delete_phone_helper(bot, state)
     await state.clear()
 
-    # Уведомление администратору
+    # Уведомление администратору с кнопкой открытия заявки
     notification_data = dict(data)
     notification_data["telegram_user_id"] = callback.from_user.id
     notification_data["lead_type"] = lead_type
     try:
+        notification_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Открыть заявку",
+                callback_data=AdminLeadsCb(action="card", only_new=0, page=1, lead_id=lead.id).pack(),
+            )
+        ]])
         await bot.send_message(
             settings.ADMIN_TELEGRAM_ID,
             format_admin_notification(notification_data),
+            reply_markup=notification_keyboard,
         )
     except Exception:
         pass  # Не блокируем пользователя при ошибке уведомления

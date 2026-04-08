@@ -1,9 +1,11 @@
 from aiogram import Bot, F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.config import settings
+from bot.keyboards.admin import AdminQCb
+from bot.repositories.analytics import log_event
 from bot.keyboards.faq import (
     FaqCb,
     after_question_keyboard,
@@ -147,14 +149,27 @@ async def receive_user_question(
         await message.answer("Пожалуйста, опишите вопрос подробнее:")
         return
 
-    await save_user_question(session, message.from_user.id, text)
+    await save_user_question(
+        session,
+        message.from_user.id,
+        text,
+        username=message.from_user.username,
+    )
     await state.clear()
+    await log_event(session, message.from_user.id, "ask_question")
 
-    # Уведомление администратору
+    # Уведомление администратору с кнопкой открытия вопроса
     try:
+        notification_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Открыть вопрос",
+                callback_data=AdminQCb(action="card", only_new=0, page=1, q_id=question.id).pack(),
+            )
+        ]])
         await bot.send_message(
             settings.ADMIN_TELEGRAM_ID,
             f"❓ Вопрос от пользователя (ID: {message.from_user.id})\n\n{text}",
+            reply_markup=notification_keyboard,
         )
     except Exception:
         pass

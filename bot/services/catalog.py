@@ -49,13 +49,8 @@ def format_item_text(item: CatalogItem, include_poster_link: bool = True) -> str
     if item.price:
         parts.append(f"Цена: {escape(item.price)}")
 
-    links = []
-    if item.url:
-        links.append(f'<a href="{escape(item.url, quote=True)}">Открыть на сайте</a>')
     if include_poster_link and item.image_url:
-        links.append(f'<a href="{escape(item.image_url, quote=True)}">Постер</a>')
-    if links:
-        parts.append(" | ".join(links))
+        parts.append(f'<a href="{escape(item.image_url, quote=True)}">Постер</a>')
 
     return "\n\n".join(parts)
 
@@ -70,7 +65,6 @@ def format_items_list(
     durations: list[str] | None = None,
     genre_labels: list[str] | None = None,
 ) -> str:
-    pages = total_pages(total_items)
     start = (page - 1) * ITEMS_PER_PAGE + 1
     end = min(page * ITEMS_PER_PAGE, total_items)
 
@@ -86,9 +80,7 @@ def format_items_list(
     if genre_labels:
         filters.append(f"Предметы: {escape(', '.join(genre_labels))}")
 
-    lines = [f"{i}. {escape(item.title)}" for i, item in enumerate(items, start=1)]
     parts = [header, counter]
     if filters:
-        parts.append(" | ".join(filters))
-    parts.append("\n".join(lines))
+        parts.append(filters[0] if len(filters) == 1 else "\n".join(filters))
     return "\n\n".join(parts)

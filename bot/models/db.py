@@ -133,11 +133,15 @@ class UserQuestion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255))
     text: Mapped[str] = mapped_column(Text, nullable=False)
     is_answered: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    answered_by: Mapped[int | None] = mapped_column(BigInteger)
+    answer_text: Mapped[str | None] = mapped_column(Text)
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +164,24 @@ class FranchiseContent(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Аналитика
+# ---------------------------------------------------------------------------
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(50))
+    entity_id: Mapped[int | None] = mapped_column(Integer)
+    payload_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 

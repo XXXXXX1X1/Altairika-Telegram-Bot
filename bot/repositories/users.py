@@ -1,11 +1,18 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+# Управление записями пользователей бота.
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.db import BotUser
 
 
-async def upsert_user(session: AsyncSession, telegram_user_id: int, username: str | None,
-                      first_name: str, language_code: str | None) -> BotUser:
+async def upsert_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+    username: str | None,
+    first_name: str,
+    language_code: str | None,
+) -> BotUser:
     result = await session.execute(
         select(BotUser).where(BotUser.telegram_user_id == telegram_user_id)
     )
@@ -23,7 +30,7 @@ async def upsert_user(session: AsyncSession, telegram_user_id: int, username: st
         user.username = username
         user.first_name = first_name
         user.language_code = language_code
-        # last_seen_at обновляется через onupdate
+        # last_seen_at обновляется через onupdate в модели
 
     await session.commit()
     return user

@@ -1,3 +1,5 @@
+# Обработчик таблицы сравнения с конкурентами.
+
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
@@ -13,12 +15,9 @@ router = Router()
 async def show_comparison(callback: CallbackQuery, session) -> None:
     competitors = await get_active_competitors(session)
     parameters = await get_parameters_with_values(session)
-
-    text = format_comparison(parameters, competitors)
-
     await show_text_screen(
         callback,
-        text,
+        format_comparison(parameters, competitors),
         reply_markup=compare_keyboard(),
         parse_mode="HTML",
     )

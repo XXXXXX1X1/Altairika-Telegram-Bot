@@ -1,3 +1,5 @@
+# Точка входа бота: /start, главное меню, о компании, /sync.
+
 from pathlib import Path
 
 from aiogram import F, Router
@@ -8,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import settings
 from bot.keyboards.main_menu import about_company_keyboard, main_menu_keyboard
+from bot.repositories.analytics import log_event
 from bot.repositories.users import upsert_user
 from bot.utils.message_render import show_local_photo_screen, show_text_screen
 
@@ -16,13 +19,13 @@ router = Router()
 WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "Logo.png"
 ABOUT_COMPANY_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "o_nas.png"
 
-WELCOME_TEXT = (
+_WELCOME_TEXT = (
     "Добро пожаловать в Альтаирику!\n\n"
     "Мы создаём образовательные VR/360° фильмы для школ, планетариев и семей.\n\n"
     "Выберите раздел:"
 )
 
-ABOUT_COMPANY_TEXT = (
+_ABOUT_COMPANY_TEXT = (
     "<b>🏢 О компании Altairika</b>\n\n"
     "Altairika создаёт образовательные VR и 360° фильмы для детей, школ, планетариев, "
     "лагерей и семейного досуга.\n\n"
@@ -42,6 +45,10 @@ ABOUT_COMPANY_TEXT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# /start и /menu
+# ---------------------------------------------------------------------------
+
 @router.message(Command("start", "menu"))
 async def cmd_start(message: Message, session, state: FSMContext) -> None:
     await state.clear()
@@ -52,13 +59,18 @@ async def cmd_start(message: Message, session, state: FSMContext) -> None:
         first_name=message.from_user.first_name,
         language_code=message.from_user.language_code,
     )
+    await log_event(session, message.from_user.id, "open_main_menu")
     await message.answer_photo(
         photo=FSInputFile(str(WELCOME_IMAGE_PATH)),
-        caption=WELCOME_TEXT,
+        caption=_WELCOME_TEXT,
         reply_markup=main_menu_keyboard(),
         parse_mode="HTML",
     )
 
+
+# ---------------------------------------------------------------------------
+# Главное меню (callback)
+# ---------------------------------------------------------------------------
 
 @router.callback_query(F.data == "main_menu")
 async def cb_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
@@ -66,12 +78,16 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await show_local_photo_screen(
         callback,
         WELCOME_IMAGE_PATH,
-        WELCOME_TEXT,
+        _WELCOME_TEXT,
         reply_markup=main_menu_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
 
+
+# ---------------------------------------------------------------------------
+# О компании
+# ---------------------------------------------------------------------------
 
 @router.callback_query(F.data == "about_company")
 async def cb_about_company(callback: CallbackQuery, state: FSMContext) -> None:
@@ -79,29 +95,31 @@ async def cb_about_company(callback: CallbackQuery, state: FSMContext) -> None:
     await show_local_photo_screen(
         callback,
         ABOUT_COMPANY_IMAGE_PATH,
-        ABOUT_COMPANY_TEXT,
+        _ABOUT_COMPANY_TEXT,
         reply_markup=about_company_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
 
 
+# ---------------------------------------------------------------------------
+# /sync — ручной запуск парсинга (только для администратора)
+# ---------------------------------------------------------------------------
+
 @router.message(Command("sync"))
-async def cmd_sync(message: Message, session_factory: async_sessionmaker = None) -> None:
-    """Ручной запуск парсинга — только для администратора."""
+async def cmd_sync(message: Message) -> None:
     if message.from_user.id != settings.ADMIN_TELEGRAM_ID:
         return
 
     await message.answer("Запускаю парсинг каталога...")
 
-    from bot.parser.sync import sync_catalog
-    # session_factory пробрасывается через middleware data
-    # но здесь нам нужна фабрика напрямую — получим её из app data
-    # Для простоты создаём движок на лету из settings
-    from sqlalchemy.ext.asyncio import async_sessionmaker as sf, create_async_engine
-    engine = create_async_engine(settings.DATABASE_URL)
-    factory = sf(engine, expire_on_commit=False)
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker as _sf
 
+    from bot.parser.sync import sync_catalog
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    factory = _sf(engine, expire_on_commit=False)
     result = await sync_catalog(factory)
     await engine.dispose()
 

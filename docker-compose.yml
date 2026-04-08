@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: altairika
       POSTGRES_USER: bot
@@ -11,18 +12,21 @@ services:
       test: ["CMD-SHELL", "pg_isready -U bot -d altairika"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   bot:
     build: .
-    env_file: .env
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: true
     environment:
+      # Перекрываем DATABASE_URL из .env: внутри Docker база доступна по имени сервиса "db"
       DATABASE_URL: postgresql+asyncpg://bot:secret@db:5432/altairika
     depends_on:
       db:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head && python -m bot"
+    command: sh scripts/entrypoint.sh
 
 volumes:
   postgres_data:

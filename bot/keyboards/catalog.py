@@ -70,8 +70,9 @@ def items_list_keyboard(
     show_filters_button: bool = True,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    start_index = (page - 1) * ITEMS_PER_PAGE + 1
 
-    for i, item in enumerate(items, start=1):
+    for i, item in enumerate(items, start=start_index):
         builder.button(
             text=f"{i}. {item.title[:35]}{'…' if len(item.title) > 35 else ''}",
             callback_data=CatalogCb(
@@ -144,6 +145,8 @@ def item_text_keyboard(
     cat_id: int,
     page: int,
     similar_theme_key: str | None,
+    *,
+    item_url: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
@@ -151,27 +154,24 @@ def item_text_keyboard(
         InlineKeyboardButton(text="📝 Записаться", callback_data=f"lead:booking:{item_id}"),
         InlineKeyboardButton(
             text="⬅️ Назад к списку",
-            callback_data=CatalogCb(
-                action="list",
-                cat_id=cat_id,
-                page=page,
-            ).pack(),
+            callback_data=CatalogCb(action="list", cat_id=cat_id, page=page).pack(),
         ),
     )
+
     row2 = [InlineKeyboardButton(text="❓ Задать вопрос", callback_data="faq")]
     if similar_theme_key:
         row2.append(
             InlineKeyboardButton(
                 text="✨ Похожие",
-                callback_data=CatalogCb(
-                    action="similar",
-                    cat_id=cat_id,
-                    page=1,
-                    theme=similar_theme_key,
-                ).pack(),
+                callback_data=CatalogCb(action="similar", cat_id=cat_id, page=1, theme=similar_theme_key).pack(),
             )
         )
     builder.row(*row2)
+
+    if item_url:
+        builder.row(
+            InlineKeyboardButton(text="🌐 На сайте", url=item_url)
+        )
 
     return builder.as_markup()
 

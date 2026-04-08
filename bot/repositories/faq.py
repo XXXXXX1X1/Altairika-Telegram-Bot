@@ -37,9 +37,12 @@ async def get_item_by_id(session: AsyncSession, item_id: int) -> FaqItem | None:
 
 
 async def save_user_question(
-    session: AsyncSession, telegram_user_id: int, text: str
+    session: AsyncSession,
+    telegram_user_id: int,
+    text: str,
+    username: str | None = None,
 ) -> UserQuestion:
-    question = UserQuestion(telegram_user_id=telegram_user_id, text=text)
+    question = UserQuestion(telegram_user_id=telegram_user_id, text=text, username=username)
     session.add(question)
     await session.commit()
     return question
