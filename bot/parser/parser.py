@@ -113,12 +113,30 @@ def _clean_text(value: str | None) -> str | None:
     if not value:
         return None
     value = html.unescape(value)
+    # Убираем style и script блоки целиком до удаления тегов
+    value = re.sub(r"<style\b[^>]*>.*?</style>", " ", value, flags=re.S | re.IGNORECASE)
+    value = re.sub(r"<script\b[^>]*>.*?</script>", " ", value, flags=re.S | re.IGNORECASE)
     value = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
     value = re.sub(r"<[^>]+>", "", value)
     value = value.replace("\xa0", " ")
     value = re.sub(r"[ \t]+", " ", value)
     value = re.sub(r"\n{3,}", "\n\n", value)
     return value.strip() or None
+
+
+# Маркеры CSS/JS мусора который может попасть в текст из Tilda
+_CSS_GARBAGE_RE = re.compile(
+    r"#rec\d+\s*[\.\{]|@media\s*\(|\{[^}]{0,50}(?:color|font-size|border|padding)[^}]*\}",
+    re.S | re.IGNORECASE,
+)
+
+
+def _strip_css_garbage(text: str) -> str:
+    """Обрезает текст по первому вхождению CSS/JS мусора из Tilda."""
+    match = _CSS_GARBAGE_RE.search(text)
+    if match:
+        return text[:match.start()].strip()
+    return text
 
 
 def _extract_first_image(product: dict) -> str | None:
@@ -311,7 +329,8 @@ def _extract_page_metadata(page_html: str) -> dict[str, str | list[str] | None]:
     flat_text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", normalized_html)).strip()
 
     subtitle_match = re.search(r'<meta name="description" content="([^"]+)"', normalized_html)
-    subtitle = _clean_text(subtitle_match.group(1)) if subtitle_match else None
+    subtitle_raw = _clean_text(subtitle_match.group(1)) if subtitle_match else None
+    subtitle = _strip_css_garbage(subtitle_raw) if subtitle_raw else None
 
     cover_descr_match = re.search(
         r'<div class="t338__descr[^"]*"[^>]*field="descr">(.*?)</div>\s*</div>\s*</div>\s*</div>',
@@ -326,6 +345,8 @@ def _extract_page_metadata(page_html: str) -> dict[str, str | list[str] | None]:
             description = parts[2]
         elif parts:
             description = parts[-1]
+        if description:
+            description = _strip_css_garbage(description) or None
 
     age_duration_match = re.search(
         r"(\d{1,2}\+)\s*\|\s*([0-9]{1,3}\s*мин(?:ут(?:а|ы)?)?\.?)\s*\|\s*((?:180|360)°)",

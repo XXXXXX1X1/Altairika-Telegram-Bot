@@ -232,3 +232,19 @@ class ComparisonValue(Base):
 
     parameter: Mapped["ComparisonParameter"] = relationship(back_populates="values")
     competitor: Mapped["Competitor"] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# AI сессии
+# ---------------------------------------------------------------------------
+
+class AiSession(Base):
+    __tablename__ = "ai_sessions"
+
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    active_intent: Mapped[str | None] = mapped_column(String(100))
+    state_json: Mapped[str | None] = mapped_column(Text)  # JSON: параметры + last_recommended_ids
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
