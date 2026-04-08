@@ -21,7 +21,11 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def call_llm(system_prompt: str, user_message: str) -> str | None:
+async def call_llm(
+    system_prompt: str,
+    user_message: str,
+    history: list[dict[str, str]] | None = None,
+) -> str | None:
     """Вызывает модель и возвращает текст ответа или None при ошибке."""
     if not settings.OPENROUTER_API_KEY:
         logger.error("OPENROUTER_API_KEY не задан")
@@ -29,14 +33,16 @@ async def call_llm(system_prompt: str, user_message: str) -> str | None:
 
     client = _get_client()
     logger.info("LLM вызов: модель=%s prompt_len=%d", settings.AI_MODEL, len(system_prompt))
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+
     try:
         response = await client.chat.completions.create(
             model=settings.AI_MODEL,
             max_tokens=settings.AI_MAX_TOKENS,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
+            messages=messages,
         )
         text = response.choices[0].message.content or None
         logger.info("LLM ответ получен: %d символов", len(text) if text else 0)

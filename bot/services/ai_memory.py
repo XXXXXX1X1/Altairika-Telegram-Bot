@@ -1,12 +1,15 @@
 """Работа с session state диалога пользователя."""
 import json
 import logging
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.repositories.ai_sessions import get_session, save_session, clear_session
 
 logger = logging.getLogger(__name__)
+
+_MAX_HISTORY_MESSAGES = 8
 
 
 async def load_state(db: AsyncSession, telegram_user_id: int) -> dict:
@@ -43,3 +46,40 @@ def merge_params(existing: dict, new_params: dict) -> dict:
         if value is not None:
             result[key] = value
     return result
+
+
+def get_history(state: dict[str, Any]) -> list[dict[str, str]]:
+    """Возвращает валидную историю диалога из state."""
+    history = state.get("history", [])
+    if not isinstance(history, list):
+        return []
+
+    valid_messages: list[dict[str, str]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"}:
+            continue
+        if not isinstance(content, str) or not content.strip():
+            continue
+        valid_messages.append({"role": role, "content": content.strip()})
+    return valid_messages[-_MAX_HISTORY_MESSAGES:]
+
+
+def append_history(
+    state: dict[str, Any],
+    *,
+    user_text: str,
+    assistant_text: str,
+) -> dict[str, Any]:
+    """Добавляет новый обмен репликами в историю и обрезает хвост."""
+    updated_state = dict(state)
+    history = get_history(updated_state)
+    history.extend([
+        {"role": "user", "content": user_text.strip()},
+        {"role": "assistant", "content": assistant_text.strip()},
+    ])
+    updated_state["history"] = history[-_MAX_HISTORY_MESSAGES:]
+    return updated_state

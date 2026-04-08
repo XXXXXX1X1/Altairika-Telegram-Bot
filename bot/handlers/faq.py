@@ -57,7 +57,7 @@ async def _show_topics(callback: CallbackQuery, session) -> None:
 
     await show_text_screen(
         callback,
-        "<b>Частые вопросы</b>\n\nВыберите тему:",
+        "<b>Частые вопросы</b>\n\nВыберите тему или просто напишите вопрос в чат.",
         reply_markup=topics_keyboard(topics),
         parse_mode="HTML",
     )

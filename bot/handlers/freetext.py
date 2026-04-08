@@ -6,10 +6,12 @@ import logging
 
 from aiogram import Router
 from aiogram.filters import StateFilter
+from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.handlers.ai_movie import run_ai_pick_flow
 from bot.config import settings
 from bot.keyboards.ai import after_ai_keyboard, ai_fallback_keyboard
 from bot.keyboards.faq import freetext_keyboard
@@ -31,7 +33,7 @@ _LEAD_INTENTS = {"lead_booking", "lead_franchise"}
 
 
 @router.message(StateFilter(default_state))
-async def freetext_handler(message: Message, session: AsyncSession) -> None:
+async def freetext_handler(message: Message, session: AsyncSession, state: FSMContext) -> None:
     # Если AI не настроен — возвращаем старую заглушку
     if not settings.OPENROUTER_API_KEY:
         await message.answer(
@@ -55,6 +57,10 @@ async def freetext_handler(message: Message, session: AsyncSession) -> None:
         else:
             reply = "Хорошо! Нажмите кнопку ниже чтобы оставить заявку на франшизу:"
         await message.answer(reply, reply_markup=after_ai_keyboard(intent))
+        return
+
+    if intent == "movie_selection":
+        await run_ai_pick_flow(message, state, session)
         return
 
     # Показываем индикатор загрузки

@@ -128,7 +128,8 @@ async def _show_categories(callback: CallbackQuery, session) -> None:
 
     await show_text_screen(
         callback,
-        "<b>Каталог</b>\n\nВыберите категорию или просмотрите всё:",
+        "<b>Каталог</b>\n\nВыберите категорию или просмотрите всё.\n"
+        "Если удобнее, просто напишите в чат тему или параметры фильма.",
         reply_markup=categories_keyboard(categories),
         parse_mode="HTML",
     )
@@ -410,5 +411,4 @@ async def back_from_photo(callback: CallbackQuery, callback_data: CatalogCb, ses
 @router.callback_query(F.data == "noop")
 async def noop(callback: CallbackQuery) -> None:
     await callback.answer()
-
 

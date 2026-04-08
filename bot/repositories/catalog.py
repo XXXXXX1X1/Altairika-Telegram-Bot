@@ -110,6 +110,11 @@ async def get_filtered_active_items(
     return items
 
 
+async def get_active_items(session: AsyncSession) -> list[CatalogItem]:
+    """Возвращает все активные фильмы каталога."""
+    return await get_filtered_active_items(session)
+
+
 async def count_active_items(
     session: AsyncSession,
     category_id: int = 0,

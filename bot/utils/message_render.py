@@ -38,12 +38,19 @@ async def show_photo_screen(
     reply_markup: InlineKeyboardMarkup | None = None,
     parse_mode: str | None = "HTML",
 ) :
-    sent = await callback.message.answer_photo(
-        photo=photo,
-        caption=caption,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode,
-    )
+    try:
+        sent = await callback.message.answer_photo(
+            photo=photo,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        )
+    except TelegramBadRequest:
+        sent = await callback.message.answer(
+            caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        )
     try:
         await callback.message.delete()
     except TelegramBadRequest:

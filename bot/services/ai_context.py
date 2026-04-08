@@ -149,8 +149,11 @@ async def build_context(
         if compare:
             parts.append(compare)
 
-    # Каталог фильмов — только для movie_selection
-    if intent == "movie_selection" and extra_catalog_text:
-        parts.append(f"=== Подобранные фильмы ===\n{extra_catalog_text}")
+    # Каталог фильмов — для подбора и вопросов о конкретном фильме
+    if intent in ("movie_selection", "movie_details") and extra_catalog_text:
+        if intent == "movie_selection" and not extra_catalog_text.startswith("==="):
+            parts.append(f"=== Подобранные фильмы ===\n{extra_catalog_text}")
+        else:
+            parts.append(extra_catalog_text)
 
     return "\n\n".join(parts)

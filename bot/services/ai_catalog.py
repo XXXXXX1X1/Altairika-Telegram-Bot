@@ -1,10 +1,15 @@
-"""Подбор фильмов из каталога по параметрам запроса."""
+"""Подбор фильмов из каталога по параметрам запроса и названию."""
 import re
+from difflib import SequenceMatcher
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.db import CatalogItem
-from bot.repositories.catalog import get_filtered_active_items, item_metadata
+from bot.repositories.catalog import (
+    get_active_items,
+    get_filtered_active_items,
+    item_metadata,
+)
 
 # Сопоставление тем из текста пользователя → ключевые слова для поиска в тегах
 _THEME_KEYWORDS: dict[str, list[str]] = {
@@ -34,6 +39,154 @@ _GRADE_TO_AGE: dict[int, list[str]] = {
     11: ["16+"],
 }
 
+_TITLE_PREFIX_PATTERNS = [
+    r"(?:расскажи|подскажи|покажи|опиши)\s+(?:мне\s+)?(?:о|про)\s+(?:фильме|мультфильме|кино)\s+(.+)",
+    r"(?:что\s+за|информация\s+о|описание\s+)(?:фильма|мультфильма|кино)\s+(.+)",
+    r"(?:о|про)\s+(?:фильме|мультфильме|кино)\s+(.+)",
+    r"(?:фильм|мультфильм|кино)\s+(.+)",
+]
+
+_TITLE_TRAILING_WORDS = {
+    "пожалуйста", "плиз", "если", "можно", "подробнее", "кратко",
+}
+_QUERY_STOPWORDS = {
+    "расскажи", "подскажи", "покажи", "опиши", "мне", "о", "про",
+    "фильм", "фильме", "фильма", "кино", "мультфильм", "мультфильме",
+    "что", "за", "информация", "описание", "пожалуйста",
+}
+
+
+def normalize_text(text: str) -> str:
+    """Нормализует текст для сопоставления без учёта регистра и пунктуации."""
+    normalized = text.lower().replace("ё", "е")
+    normalized = re.sub(r"[\"'`«»„“”()\[\]{}<>:;!?.,/\\|*_+=~№-]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def tokenize_text(text: str) -> list[str]:
+    """Разбивает нормализованный текст на токены без короткого мусора."""
+    return [token for token in normalize_text(text).split() if len(token) >= 2]
+
+
+def _cleanup_title_candidate(text: str) -> str:
+    candidate = normalize_text(text)
+    tokens = candidate.split()
+    while tokens and tokens[-1] in _TITLE_TRAILING_WORDS:
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def extract_movie_title_candidate(text: str) -> str | None:
+    """Пытается извлечь название фильма из свободного текста."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+
+    quoted_match = re.search(r"[«\"“„']([^»\"”']+)[»\"”']", raw)
+    if quoted_match:
+        candidate = _cleanup_title_candidate(quoted_match.group(1))
+        return candidate or None
+
+    lower = raw.lower().replace("ё", "е").strip()
+    for pattern in _TITLE_PREFIX_PATTERNS:
+        match = re.search(pattern, lower)
+        if match:
+            candidate = _cleanup_title_candidate(match.group(1))
+            return candidate or None
+
+    tokens = tokenize_text(raw)
+    if 1 <= len(tokens) <= 4 and not any(token in _QUERY_STOPWORDS for token in tokens):
+        return " ".join(tokens)
+
+    return None
+
+
+def _title_match_score(item: CatalogItem, query: str) -> float:
+    """Считает релевантность названия фильма запросу пользователя."""
+    query_norm = normalize_text(query)
+    title_norm = normalize_text(item.title or "")
+    if not query_norm or not title_norm:
+        return 0.0
+
+    if title_norm == query_norm:
+        return 1.0
+
+    query_tokens = set(tokenize_text(query_norm))
+    title_tokens = set(tokenize_text(title_norm))
+    if not query_tokens or not title_tokens:
+        return 0.0
+
+    token_overlap = len(query_tokens & title_tokens) / max(len(query_tokens), len(title_tokens))
+    ratio = SequenceMatcher(None, query_norm, title_norm).ratio()
+    substring_bonus = 0.18 if query_norm in title_norm or title_norm in query_norm else 0.0
+
+    return max(ratio, token_overlap + substring_bonus)
+
+
+def _is_confident_title_match(item: CatalogItem, query: str, score: float) -> bool:
+    query_norm = normalize_text(query)
+    title_norm = normalize_text(item.title or "")
+    if not query_norm or not title_norm:
+        return False
+
+    if title_norm == query_norm:
+        return True
+    if query_norm in title_norm and len(query_norm) >= 4:
+        return True
+
+    query_tokens = set(tokenize_text(query_norm))
+    title_tokens = set(tokenize_text(title_norm))
+    if query_tokens and query_tokens == title_tokens:
+        return True
+
+    return score >= 0.82
+
+
+async def find_movie_by_title(db: AsyncSession, query: str) -> CatalogItem | None:
+    """Ищет конкретный фильм по названию."""
+    query_norm = normalize_text(query)
+    if not query_norm:
+        return None
+
+    items = await get_active_items(db)
+    if not items:
+        return None
+
+    scored = sorted(
+        ((item, _title_match_score(item, query_norm)) for item in items),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    top_item, top_score = scored[0]
+    return top_item if _is_confident_title_match(top_item, query_norm, top_score) else None
+
+
+async def find_similar_movies(
+    db: AsyncSession,
+    query: str,
+    *,
+    limit: int = 5,
+    exclude_ids: set[int] | None = None,
+) -> list[CatalogItem]:
+    """Возвращает фильмы с наиболее похожими названиями."""
+    query_norm = normalize_text(query)
+    if not query_norm:
+        return []
+
+    items = await get_active_items(db)
+    if exclude_ids:
+        items = [item for item in items if item.id not in exclude_ids]
+
+    scored = []
+    for item in items:
+        score = _title_match_score(item, query_norm)
+        if score >= 0.38:
+            scored.append((item, score))
+
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return [item for item, _ in scored[:limit]]
+
 
 def extract_params(text: str, existing_state: dict) -> dict:
     """Извлекает параметры подбора из текста пользователя."""
@@ -47,11 +200,19 @@ def extract_params(text: str, existing_state: dict) -> dict:
 
     # Возраст
     age_match = re.search(r"(\d{1,2})\s*лет", lower)
+    if not age_match:
+        age_match = re.search(r"возраст\s*(\d{1,2})", lower)
+    if not age_match:
+        age_match = re.search(r"от\s*(\d{1,2})\s*лет", lower)
     if age_match:
         params["age"] = int(age_match.group(1))
 
     # Длительность
     duration_match = re.search(r"до\s*(\d+)\s*минут", lower)
+    if not duration_match:
+        duration_match = re.search(r"(?:длительность|минут|мин)\s*(\d+)", lower)
+    if not duration_match:
+        duration_match = re.search(r"(\d+)\s*минут", lower)
     if duration_match:
         minutes = int(duration_match.group(1))
         if minutes <= 5:
@@ -199,4 +360,37 @@ def format_films_for_prompt(items: list[CatalogItem]) -> str:
             parts.append(item.description[:200])
         lines.append(" | ".join(parts))
 
+    return "\n".join(lines)
+
+
+def format_movie_for_prompt(item: CatalogItem) -> str:
+    """Форматирует одну карточку фильма для контекста модели."""
+    parts = [f"Название: {item.title}"]
+    if item.age_rating:
+        parts.append(f"Возраст: {item.age_rating}")
+    if item.duration:
+        parts.append(f"Длительность: {item.duration}")
+    if item.short_description:
+        parts.append(f"Краткое описание: {item.short_description}")
+    elif item.description:
+        parts.append(f"Описание: {item.description}")
+    return "\n".join(parts)
+
+
+def format_similar_movies_for_prompt(items: list[CatalogItem]) -> str:
+    """Форматирует список похожих фильмов для контекста модели."""
+    if not items:
+        return "Похожих фильмов не найдено."
+
+    lines = []
+    for item in items:
+        line = f"• {item.title}"
+        extras = []
+        if item.age_rating:
+            extras.append(item.age_rating)
+        if item.duration:
+            extras.append(item.duration)
+        if extras:
+            line += " | " + " | ".join(extras)
+        lines.append(line)
     return "\n".join(lines)
