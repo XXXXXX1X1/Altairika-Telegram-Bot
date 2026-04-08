@@ -70,8 +70,8 @@ Telegram-бот для компании Altairika — выездного VR-ки
 ### 1. Клонировать репозиторий
 
 ```bash
-git clone <repo-url>
-cd TG
+git clone https://github.com/XXXXXX1X1/Altairika-Telegram-Bot.git
+cd Altairika-Telegram-Bot
 ```
 
 ### 2. Создать файл `.env`
