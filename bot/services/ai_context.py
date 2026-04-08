@@ -13,7 +13,7 @@ from bot.models.db import (
 logger = logging.getLogger(__name__)
 
 # Путь к базе знаний компании
-_KNOWLEDGE_FILE = Path(__file__).parent.parent.parent / "docs" / "10_company_knowledge.md"
+_KNOWLEDGE_FILE = Path(__file__).parent.parent.parent / "docs" / "work" / "10_company_knowledge.md"
 
 _knowledge_cache: str | None = None
 
@@ -103,8 +103,12 @@ async def get_compare_context(db: AsyncSession) -> str:
 
     lines = ["=== Сравнение с конкурентами ==="]
     for param in params:
+        altairika_value = param.altairika_value
+        # Нормализуем устаревшее seeded-значение, чтобы бот не отвечал "68+ фильмов".
+        if param.name == "Размер каталога" and altairika_value.strip() == "68+ фильмов":
+            altairika_value = "135 на главной странице, 150+ в разделе франшизы"
         lines.append(f"\n{param.name}:")
-        lines.append(f"  Альтаирика: {param.altairika_value}")
+        lines.append(f"  Альтаирика: {altairika_value}")
         values_result = await db.execute(
             select(ComparisonValue)
             .where(ComparisonValue.parameter_id == param.id)

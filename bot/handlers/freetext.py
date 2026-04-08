@@ -54,6 +54,12 @@ _FRANCHISE_OPEN_HINTS = (
 _MAIN_MENU_HINTS = (
     "главное меню", "в меню", "открой меню", "открыть меню", "в главное меню",
 )
+_FRANCHISE_INFO_GUARD_HINTS = (
+    "сколько стоит франшиза", "стоимость франшизы", "цена франшизы",
+    "сколько нужно вложить", "какие вложения", "какие условия франшизы",
+    "какие условия", "что входит во франшизу", "паушальный взнос",
+    "роялти", "окупаемость",
+)
 
 
 @router.message(StateFilter(default_state))
@@ -87,6 +93,10 @@ async def freetext_handler(message: Message, session: AsyncSession, state: FSMCo
         decision = decide_next_intent(user_text, ai_state)
     intent = str(decision["intent"])
     action = str(decision.get("action") or "")
+    lower_user_text = user_text.lower().strip()
+    if intent == "lead_franchise" and any(hint in lower_user_text for hint in _FRANCHISE_INFO_GUARD_HINTS):
+        intent = "franchise_info"
+        action = "answer"
     logger.info("user=%d intent=%s action=%s text=%r", message.from_user.id, intent, action, user_text[:80])
 
     # Для явных заявок — не тратим токены, сразу предлагаем форму

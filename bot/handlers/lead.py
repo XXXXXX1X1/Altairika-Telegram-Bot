@@ -86,6 +86,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext, session) -> 
         "form_message_id": screen.message_id,
     })
     await state.set_state(LeadForm.name)
+    await _ensure_name_helper(callback.bot, state)
     await callback.answer()
 
 
@@ -108,6 +109,7 @@ async def start_franchise(callback: CallbackQuery, state: FSMContext, session) -
         "form_message_id": screen.message_id,
     })
     await state.set_state(LeadForm.name)
+    await _ensure_name_helper(callback.bot, state)
     await callback.answer()
 
 
@@ -132,6 +134,7 @@ async def start_contact(event, state: FSMContext, session) -> None:
             "form_message_id": screen.message_id,
         })
         await state.set_state(LeadForm.name)
+        await _ensure_name_helper(event.bot, state)
         await event.answer()
     else:
         sent = await event.answer(
@@ -145,6 +148,7 @@ async def start_contact(event, state: FSMContext, session) -> None:
             "form_message_id": sent.message_id,
         })
         await state.set_state(LeadForm.name)
+        await _ensure_name_helper(event.bot, state)
 
 
 # ---------------------------------------------------------------------------
@@ -245,15 +249,14 @@ async def _show_confirm(bot: Bot, state: FSMContext) -> None:
 async def step_edit(callback: CallbackQuery, state: FSMContext) -> None:
     """Вернуться к шагу имени, сохранив введённые данные."""
     await state.set_state(LeadForm.name)
-    await _edit_form_message(
+    await _render_current_step(
         callback.bot,
         state,
-        format_step_prompt(
+        override_text=format_step_prompt(
             LeadForm.name,
             lead_type=(await state.get_data()).get("lead_type"),
             item_title=(await state.get_data()).get("item_title"),
         ),
-        reply_markup=step_keyboard(),
     )
     await callback.answer()
 

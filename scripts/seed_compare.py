@@ -53,7 +53,7 @@ PARAMETERS = [
     },
     {
         "name": "Размер каталога",
-        "altairika": "68+ фильмов",
+        "altairika": "135 на главной странице, 150+ в разделе франшизы",
         "order": 2,
         "values": [
             ("VR Concept", "до 30 сцен", ComparisonRating.bad),

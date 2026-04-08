@@ -104,6 +104,7 @@ async def cb_ai_pick_start(callback: CallbackQuery, state: FSMContext) -> None:
         ai_prompt_msg_id=sent.message_id,
         ai_prompt_chat_id=sent.chat.id,
         ai_flow_step="waiting_theme",
+        ai_back_enabled=False,
     )
     await callback.answer()
 
@@ -128,6 +129,7 @@ async def cb_newtopic(callback: CallbackQuery, state: FSMContext) -> None:
         ai_prompt_msg_id=sent.message_id,
         ai_prompt_chat_id=sent.chat.id,
         ai_flow_step="waiting_theme",
+        ai_back_enabled=True,
     )
     await callback.answer()
 
@@ -150,6 +152,7 @@ async def cb_refine(callback: CallbackQuery, state: FSMContext) -> None:
         ai_prompt_msg_id=sent.message_id,
         ai_prompt_chat_id=sent.chat.id,
         ai_flow_step="waiting_filters",
+        ai_back_enabled=True,
     )
     await callback.answer()
 
@@ -265,6 +268,7 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
             ai_prompt_msg_id=sent.message_id,
             ai_prompt_chat_id=sent.chat.id,
             ai_flow_step="waiting_filters",
+            ai_back_enabled=True,
         )
         return
 
@@ -287,10 +291,11 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
         return
 
     if current_state == AiPick.refine.state and not _has_new_constraints(existing_params, params):
+        show_back = bool(data.get("ai_back_enabled"))
         await _delete_ai_pick_prompt(message.bot, state)
         sent = await message.answer(
             _NO_NEW_PARAMS_TEXT,
-            reply_markup=ai_pick_cancel_keyboard(show_back=True),
+            reply_markup=ai_pick_cancel_keyboard(show_back=show_back),
             parse_mode="HTML",
         )
         await state.update_data(ai_prompt_msg_id=sent.message_id, ai_prompt_chat_id=sent.chat.id)
@@ -311,14 +316,14 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
             "По вашему запросу ничего не нашлось. Попробуйте другую тему или более общий запрос.",
             reply_markup=ai_pick_empty_keyboard(),
         )
-        await state.update_data(ai_prompt_msg_id=sent.message_id, ai_prompt_chat_id=sent.chat.id)
+        await state.update_data(ai_prompt_msg_id=sent.message_id, ai_prompt_chat_id=sent.chat.id, ai_back_enabled=False)
         return
 
     await _clear_ai_pick_messages(message.bot, state)
 
     # Сохраняем результаты в state
     item_ids = [f.id for f in films]
-    await state.update_data(ai_item_ids=item_ids, ai_params=params)
+    await state.update_data(ai_item_ids=item_ids, ai_params=params, ai_back_enabled=False)
 
     # Формируем заголовок подборки
     topic = _describe_params(params)
@@ -340,6 +345,7 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
         ai_current_item_title=first.title,
         ai_current_idx=0,
         ai_flow_step="showing_results",
+        ai_back_enabled=False,
     )
     persisted_state = await load_ai_state(session, message.from_user.id)
     persisted_state.update({
@@ -492,9 +498,10 @@ def _wants_theme_list(text: str) -> bool:
 
 async def _send_theme_list(message: Message, state: FSMContext, session) -> None:
     themes_text = await _build_theme_list_text(session)
+    data = await state.get_data()
     sent = await message.answer(
         themes_text,
-        reply_markup=ai_pick_cancel_keyboard(show_back=True),
+        reply_markup=ai_pick_cancel_keyboard(show_back=bool(data.get("ai_back_enabled"))),
         parse_mode="HTML",
     )
     await state.set_state(AiPick.waiting)
@@ -617,6 +624,7 @@ async def _restore_ai_pick_snapshot(message: Message, state: FSMContext, session
         ai_current_idx=idx,
         ai_flow_step="showing_results",
         ai_prev_snapshot=None,
+        ai_back_enabled=False,
     )
     await state.set_state(AiPick.waiting)
     return True
@@ -633,9 +641,10 @@ async def _send_selection_question(
 ) -> None:
     await _delete_ai_pick_prompt(message.bot, state)
     await state.set_state(AiPick.waiting)
+    show_back = bool(data.get("ai_back_enabled"))
     sent = await message.answer(
         _build_selection_question(existing_params, params),
-        reply_markup=ai_pick_cancel_keyboard(show_back=True),
+        reply_markup=ai_pick_cancel_keyboard(show_back=show_back),
         parse_mode="HTML",
     )
     next_step = "waiting_filters" if existing_params else "waiting_theme"

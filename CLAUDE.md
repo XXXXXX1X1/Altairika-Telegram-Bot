@@ -8,14 +8,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Документация
 
-Перед любой работой с кодом читай `docs/` в порядке нумерации:
+Перед любой работой с кодом читай основную документацию в `docs/`:
 
 - `docs/01_product_brief.md` — цели, персоны, скоуп
 - `docs/02_user_scenarios.md` — пользовательские флоу (источник истины для UX-логики)
 - `docs/03_ux_design.md` — устройство всех экранов, правила навигации, тон бота
-- `docs/04_data_model.md` — все сущности БД с полями
 - `docs/05_architecture.md` — стек, компоненты, структура модулей
 - `docs/06_roadmap.md` — порядок реализации по фазам с чеклистами
+
+Рабочая и служебная документация вынесена в `docs/work/`:
+
+- `docs/work/04_data_model.md` — все сущности БД с полями
+- `docs/work/07_code_review.md` — результаты код-ревью
+- `docs/work/08_claude_code_workflow.md` — workflow разработки
+- `docs/work/09_ai_assistant.md` — AI-ассистент: реализация, модули, сценарии
+- `docs/work/10_company_knowledge.md` — база знаний компании для AI
+- `docs/work/altairika_market_research_2026-04-08.md` — исследование конкурентов и рынка
 
 ## Стек и ключевые решения
 
