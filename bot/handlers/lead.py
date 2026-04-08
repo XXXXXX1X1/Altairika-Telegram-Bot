@@ -184,7 +184,7 @@ async def step_phone_text(message: Message, state: FSMContext) -> None:
         await _render_current_step(
             message.bot,
             state,
-            "Похоже, это не номер телефона. Попробуйте ещё раз.\n\nВведите номер телефона:",
+            "Похоже, это не номер телефона. Попробуйте ещё раз.\n\nВведите номер в формате +79991234567:",
         )
         return
 
@@ -512,7 +512,7 @@ async def _delete_phone_helper(bot: Bot, state: FSMContext) -> None:
     try:
         cleanup = await bot.send_message(
             chat_id=chat_id,
-            text="Скрываю клавиатуру…",
+            text=".",
             reply_markup=ReplyKeyboardRemove(),
         )
         await bot.delete_message(chat_id=chat_id, message_id=cleanup.message_id)

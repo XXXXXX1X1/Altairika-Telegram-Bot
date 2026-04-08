@@ -61,7 +61,6 @@ def format_confirmation(data: dict) -> str:
     lines = [
         "<b>Проверьте данные:</b>",
         "",
-        f"Тип: {LEAD_TYPE_LABELS.get(lead_type, lead_type)}",
         f"Имя: {escape(data['name'])}",
         f"Телефон: {escape(data['phone'])}",
     ]
@@ -85,7 +84,7 @@ def format_admin_notification(data: dict) -> str:
     label = LEAD_TYPE_LABELS.get(lead_type, str(lead_type))
 
     is_franchise = lead_type == LeadType.franchise
-    prefix = "🆕 ФРАНШИЗА" if is_franchise else "🆕 Новая заявка"
+    prefix = "🆕 Новая заявка — Франшиза" if is_franchise else "🆕 Новая заявка"
 
     lines = [
         f"{prefix} — {label}",

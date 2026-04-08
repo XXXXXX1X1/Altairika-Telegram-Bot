@@ -69,7 +69,7 @@ def format_lead_card(lead: Lead) -> str:
         f"Телефон: {escape(lead.phone)}",
     ]
     if lead.lead_type == LeadType.booking and lead.catalog_item_id:
-        parts.append(f"ID фильма: {lead.catalog_item_id}")
+        parts.append(f"Фильм: #{lead.catalog_item_id}")
     if lead.city:
         parts.append(f"Город: {escape(lead.city)}")
     if lead.preferred_time:

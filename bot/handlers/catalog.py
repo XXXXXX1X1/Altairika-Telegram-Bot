@@ -339,7 +339,7 @@ async def show_filter_duration(callback: CallbackQuery, callback_data: CatalogCb
 async def show_filter_genre(callback: CallbackQuery, callback_data: CatalogCb, session, state: FSMContext) -> None:
     values = await get_available_genre_filters(session, callback_data.cat_id)
     if not values:
-        await callback.answer("Предметы появятся после следующей синхронизации каталога.", show_alert=True)
+        await callback.answer("Информация по фильтру временно недоступна. Попробуйте позже.", show_alert=True)
         return
     draft = await _get_draft_filters(state)
     await show_text_screen(

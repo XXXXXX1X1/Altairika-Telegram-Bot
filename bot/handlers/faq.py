@@ -137,14 +137,6 @@ async def receive_user_question(
     message: Message, state: FSMContext, session, bot: Bot
 ) -> None:
     text = (message.text or "").strip()
-    if text == "Отмена":
-        await state.clear()
-        await message.answer(
-            "Отменено.",
-            reply_markup=after_question_keyboard(),
-        )
-        return
-
     if len(text) < 3:
         await message.answer("Пожалуйста, опишите вопрос подробнее:")
         return
