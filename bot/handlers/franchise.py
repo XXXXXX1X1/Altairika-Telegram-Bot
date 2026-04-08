@@ -19,7 +19,7 @@ from bot.utils.message_render import show_local_photo_screen, show_text_screen
 
 router = Router()
 
-FRANCHISE_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "fr.png"
+FRANCHISE_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "sections" / "franchise_cover.png"
 
 _NO_CONTENT = (
     "Информация по этому разделу скоро появится.\n\n"

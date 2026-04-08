@@ -40,7 +40,7 @@ from bot.utils.message_render import (
 
 router = Router()
 
-CATALOG_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "catalog.png"
+CATALOG_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "sections" / "catalog_cover.png"
 
 _EMPTY_CATALOG_TEXT = (
     "Каталог временно недоступен.\n"

@@ -52,7 +52,7 @@ _FORM_CALLBACKS = {
     "lead:submit", "lead:edit", "lead:continue", "lead:exit", "lead:cancel", "lead:skip",
 }
 
-WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "Logo.png"
+WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "brand" / "logo.png"
 
 WELCOME_TEXT = (
     "Добро пожаловать в Альтаирику!\n\n"

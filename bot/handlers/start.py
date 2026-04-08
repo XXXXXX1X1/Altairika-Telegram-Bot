@@ -16,8 +16,8 @@ from bot.utils.message_render import show_local_photo_screen, show_text_screen
 
 router = Router()
 
-WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "Logo.png"
-ABOUT_COMPANY_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "o_nas.png"
+WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "brand" / "logo.png"
+ABOUT_COMPANY_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "sections" / "about_company.png"
 
 _WELCOME_TEXT = (
     "Добро пожаловать в Альтаирику!\n\n"
