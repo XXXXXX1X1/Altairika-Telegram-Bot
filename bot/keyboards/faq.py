@@ -15,11 +15,11 @@ def topics_keyboard(topics: list[FaqTopic]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for topic in topics:
         builder.button(
-            text=topic.title,
+            text=f"📚 {topic.title}",
             callback_data=FaqCb(action="items", topic_id=topic.id),
         )
     builder.adjust(1)
-    builder.row(InlineKeyboardButton(text="← Главное меню", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
 
@@ -27,12 +27,12 @@ def items_keyboard(items: list[FaqItem], topic_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for item in items:
         builder.button(
-            text=item.question[:60] + ("…" if len(item.question) > 60 else ""),
+            text=f"❔ {item.question[:60]}{'…' if len(item.question) > 60 else ''}",
             callback_data=FaqCb(action="answer", topic_id=topic_id, item_id=item.id),
         )
     builder.adjust(1)
     builder.row(InlineKeyboardButton(
-        text="← Назад к темам",
+        text="⬅️ Назад к темам",
         callback_data=FaqCb(action="topics").pack(),
     ))
     return builder.as_markup()
@@ -42,11 +42,11 @@ def answer_keyboard(topic_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="← Назад к вопросам",
+                text="⬅️ Назад к вопросам",
                 callback_data=FaqCb(action="items", topic_id=topic_id).pack(),
             ),
             InlineKeyboardButton(
-                text="Задать свой вопрос",
+                text="✍️ Задать свой вопрос",
                 callback_data=FaqCb(action="question").pack(),
             ),
         ],
@@ -56,8 +56,8 @@ def answer_keyboard(topic_id: int) -> InlineKeyboardMarkup:
 def after_question_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="Частые вопросы", callback_data="faq"),
-            InlineKeyboardButton(text="Главное меню", callback_data="main_menu"),
+            InlineKeyboardButton(text="❓ Частые вопросы", callback_data="faq"),
+            InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
         ],
     ])
 
@@ -65,8 +65,8 @@ def after_question_keyboard() -> InlineKeyboardMarkup:
 def freetext_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="Частые вопросы", callback_data="faq"),
-            InlineKeyboardButton(text="Написать вопрос", callback_data=FaqCb(action="question").pack()),
+            InlineKeyboardButton(text="❓ Частые вопросы", callback_data="faq"),
+            InlineKeyboardButton(text="✍️ Написать вопрос", callback_data=FaqCb(action="question").pack()),
         ],
     ])
 
@@ -74,6 +74,6 @@ def freetext_keyboard() -> InlineKeyboardMarkup:
 def faq_question_cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Отмена", callback_data="faq")]
+            [InlineKeyboardButton(text="✖️ Отмена", callback_data="faq")]
         ]
     )

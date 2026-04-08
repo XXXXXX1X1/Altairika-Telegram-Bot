@@ -66,9 +66,10 @@ _RANGE_DURATION_MARKERS = (
 @dataclass
 class ParsedItem:
     title: str
+    subtitle: str | None = None
     description: str | None = None
     category: str | None = None
-    tags: list[str] | None = None
+    tags: dict[str, list[str]] | None = None
     image_url: str | None = None
     price: str | None = None
     duration: str | None = None
@@ -201,39 +202,87 @@ def _extract_precise_duration_from_page_html(page_html: str) -> str | None:
     return None
 
 
-async def _try_fetch_precise_duration(url: str | None) -> str | None:
-    if not url or url == CATALOG_URL:
-        return None
-    try:
-        page_html = await asyncio.to_thread(_fetch_text, url)
-    except Exception:
-        logger.debug("Парсер: не удалось открыть страницу фильма для точной длительности: %s", url)
-        return None
-    return _extract_precise_duration_from_page_html(page_html)
-
-
-def _extract_tags(product: dict) -> list[str]:
-    tags: list[str] = []
+def _split_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+    result: list[str] = []
     seen: set[str] = set()
-    tag_titles = ("тема", "тематика", "предмет", "направление", "жанр")
+    for part in re.split(r"[,/;\n]+", value):
+        normalized = part.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _normalize_genre_key(value: str) -> str:
+    normalized = value.strip().replace("A", "А").replace("a", "а").replace("ё", "е")
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.lower()
+
+
+def _normalize_genres(values: list[str]) -> list[str]:
+    mapping: dict[str, list[str]] = {
+        "естествознание": ["Естествознание"],
+        "развлечения": ["Развлечения"],
+        "развлечение": ["Развлечения"],
+        "аттракционы": ["Аттракционы"],
+        "география": ["География"],
+        "история": ["История"],
+        "астрономия": ["Астрономия"],
+        "искусство": ["Искусство"],
+        "литература": ["Литература"],
+        "народные промыслы": ["Народные промыслы"],
+        "праздничные фильмы": ["Праздничные фильмы"],
+        "научная фантастика": ["Научная фантастика"],
+        "музыкальная астрономия": ["Астрономия"],
+        "история и литература": ["История", "Литература"],
+        "астрономия. естествознание": ["Астрономия", "Естествознание"],
+    }
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = _normalize_genre_key(value)
+        canonical_values = mapping.get(key)
+        if canonical_values is None:
+            canonical_values = [value.strip().replace("A", "А")]
+        for canonical in canonical_values:
+            if not canonical or canonical in seen:
+                continue
+            seen.add(canonical)
+            result.append(canonical)
+    return result
+
+
+def _extract_tags(product: dict) -> dict[str, list[str]]:
+    payload: dict[str, list[str]] = {
+        "genres": [],
+        "themes": [],
+        "languages": [],
+    }
 
     for item in product.get("characteristics") or []:
         title = (item.get("title") or "").strip().lower()
-        if not any(marker in title for marker in tag_titles):
-            continue
-
         raw_value = _clean_text(item.get("value"))
         if not raw_value:
             continue
 
-        for part in re.split(r"[,/;\n]+", raw_value):
-            value = part.strip()
-            if not value or value in seen:
-                continue
-            seen.add(value)
-            tags.append(value)
+        if "жанр" in title:
+            for value in _normalize_genres(_split_values(raw_value)):
+                if value not in payload["genres"]:
+                    payload["genres"].append(value)
+        elif "тема" in title or "тематика" in title:
+            payload["themes"].extend(
+                [value for value in _split_values(raw_value) if value not in payload["themes"]]
+            )
+        elif "язык" in title:
+            payload["languages"].extend(
+                [value for value in _split_values(raw_value) if value not in payload["languages"]]
+            )
 
-    return tags
+    return payload
 
 
 def _normalize_age_rating(values: list[str]) -> str | None:
@@ -255,6 +304,111 @@ def _normalize_age_rating(values: list[str]) -> str | None:
             return rating
 
     return values[0][:20]
+
+
+def _extract_page_metadata(page_html: str) -> dict[str, str | list[str] | None]:
+    normalized_html = html.unescape(page_html).replace("\xa0", " ").replace("﻿", "")
+    flat_text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", normalized_html)).strip()
+
+    subtitle_match = re.search(r'<meta name="description" content="([^"]+)"', normalized_html)
+    subtitle = _clean_text(subtitle_match.group(1)) if subtitle_match else None
+
+    cover_descr_match = re.search(
+        r'<div class="t338__descr[^"]*"[^>]*field="descr">(.*?)</div>\s*</div>\s*</div>\s*</div>',
+        normalized_html,
+        flags=re.S | re.IGNORECASE,
+    )
+    cover_descr = _clean_text(cover_descr_match.group(1)) if cover_descr_match else None
+    description = None
+    if cover_descr:
+        parts = [part.strip() for part in cover_descr.split("\n\n") if part.strip()]
+        if len(parts) >= 3:
+            description = parts[2]
+        elif parts:
+            description = parts[-1]
+
+    age_duration_match = re.search(
+        r"(\d{1,2}\+)\s*\|\s*([0-9]{1,3}\s*мин(?:ут(?:а|ы)?)?\.?)\s*\|\s*((?:180|360)°)",
+        flat_text,
+        flags=re.IGNORECASE,
+    )
+
+    genre_match = re.search(
+        r'>Жанр:\s*</span>\s*(.*?)(?:<br\s*/?>|</p>)',
+        normalized_html,
+        flags=re.S | re.I,
+    )
+    theme_match = re.search(
+        r'>Тема:\s*</span>\s*(.*?)(?:<br\s*/?>|</p>)',
+        normalized_html,
+        flags=re.S | re.I,
+    )
+
+    genres = _normalize_genres(
+        _split_values(_clean_text(genre_match.group(1)) if genre_match else None)
+    )
+    themes = _split_values(_clean_text(theme_match.group(1)) if theme_match else None)
+
+    language_match = re.search(
+        r'<div class="t498__descr[^"]*"[^>]*field="descr2">\s*'
+        r'<div style="text-align: left;" data-customstyle="yes">(.*?)</div>',
+        normalized_html,
+        flags=re.S | re.I,
+    )
+    languages = _split_values(_clean_text(language_match.group(1)) if language_match else None)
+
+    return {
+        "subtitle": subtitle,
+        "description": description,
+        "age_rating": age_duration_match.group(1).strip() if age_duration_match else None,
+        "duration": _normalize_exact_duration(age_duration_match.group(2)) if age_duration_match else None,
+        "format": age_duration_match.group(3).strip() if age_duration_match else None,
+        "genres": genres,
+        "themes": themes,
+        "languages": languages,
+    }
+
+
+async def _enrich_item_from_page(item: ParsedItem, semaphore: asyncio.Semaphore) -> None:
+    if not item.url or item.url == CATALOG_URL:
+        return
+
+    async with semaphore:
+        try:
+            page_html = await asyncio.to_thread(_fetch_text, item.url)
+        except Exception:
+            logger.debug("Парсер: не удалось открыть страницу фильма: %s", item.url)
+            return
+
+    metadata = _extract_page_metadata(page_html)
+    if metadata["subtitle"]:
+        item.subtitle = str(metadata["subtitle"])
+    if metadata["description"]:
+        item.description = str(metadata["description"])
+    if metadata["age_rating"]:
+        item.age_rating = str(metadata["age_rating"])
+    if metadata["duration"]:
+        item.duration = str(metadata["duration"])
+
+    existing_tags = item.tags or {"genres": [], "themes": [], "languages": []}
+    for field_name in ("genres", "themes", "languages"):
+        values = metadata[field_name]
+        if not values:
+            continue
+        existing = list(existing_tags.get(field_name, []))
+        for value in values:
+            if value not in existing:
+                existing.append(value)
+        existing_tags[field_name] = existing
+
+    if metadata["format"]:
+        formats = list(existing_tags.get("formats", []))
+        if metadata["format"] not in formats:
+            formats.append(str(metadata["format"]))
+        existing_tags["formats"] = formats
+
+    if any(existing_tags.values()):
+        item.tags = existing_tags
 
 
 async def _fetch_products_for_block(recid: str, storepart: str) -> tuple[int, list[dict]]:
@@ -324,13 +478,10 @@ async def parse_catalog() -> list[ParsedItem]:
             duration_values = _extract_characteristic_values(product, "Продолжительность")
             item_url = _clean_text(product.get("url")) or CATALOG_URL
             duration = _join_values(duration_values)
-            if _should_lookup_precise_duration(duration):
-                precise_duration = await _try_fetch_precise_duration(item_url)
-                if precise_duration:
-                    duration = precise_duration
 
             products_by_title[title] = ParsedItem(
                 title=title,
+                subtitle=None,
                 description=_clean_text(product.get("text")) or _clean_text(product.get("descr")),
                 category=category_name,
                 tags=_extract_tags(product) or None,
@@ -341,6 +492,10 @@ async def parse_catalog() -> list[ParsedItem]:
                 url=item_url,
                 raw=product,
             )
+
+        items = list(products_by_title.values())
+        semaphore = asyncio.Semaphore(8)
+        await asyncio.gather(*(_enrich_item_from_page(item, semaphore) for item in items))
 
     except Exception as exc:
         logger.exception("Парсер: ошибка при парсинге: %s", exc)

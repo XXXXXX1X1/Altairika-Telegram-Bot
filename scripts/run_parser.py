@@ -37,9 +37,21 @@ async def main(dry_run: bool = False) -> None:
     if dry_run:
         for i, item in enumerate(items, 1):
             print(f"{i:3}. {item.title}")
+            if item.subtitle:
+                print(f"     {item.subtitle}")
             if item.age_rating or item.duration:
                 meta = " | ".join(filter(None, [item.age_rating, item.duration]))
                 print(f"     {meta}")
+            if item.tags:
+                themes = ", ".join(item.tags.get("themes", []))
+                genres = ", ".join(item.tags.get("genres", []))
+                languages = ", ".join(item.tags.get("languages", []))
+                if themes:
+                    print(f"     Тема: {themes}")
+                if genres:
+                    print(f"     Жанр: {genres}")
+                if languages:
+                    print(f"     Языки: {languages}")
             if item.price:
                 print(f"     Цена: {item.price}")
             if item.image_url:

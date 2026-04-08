@@ -1,25 +1,41 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 def step_keyboard(*, allow_skip: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if allow_skip:
-        builder.button(text="Пропустить", callback_data="lead:skip")
-    builder.button(text="Отмена", callback_data="lead:cancel")
+        builder.button(text="⏭️ Пропустить", callback_data="lead:skip")
+    builder.button(text="✖️ Отмена", callback_data="lead:cancel")
     builder.adjust(2 if allow_skip else 1)
     return builder.as_markup()
+
+
+def phone_request_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Отправить телефон", request_contact=True)],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Или введите номер вручную",
+    )
 
 
 def confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Всё верно, отправить", callback_data="lead:submit"),
-                InlineKeyboardButton(text="Изменить", callback_data="lead:edit"),
+                InlineKeyboardButton(text="✅ Всё верно, отправить", callback_data="lead:submit"),
+                InlineKeyboardButton(text="✏️ Изменить", callback_data="lead:edit"),
             ],
             [
-                InlineKeyboardButton(text="Отмена", callback_data="lead:cancel"),
+                InlineKeyboardButton(text="✖️ Отмена", callback_data="lead:cancel"),
             ],
         ]
     )
@@ -28,8 +44,8 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
 def after_submit_keyboard(has_catalog: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if has_catalog:
-        builder.button(text="← Вернуться в каталог", callback_data="catalog")
-    builder.button(text="Главное меню", callback_data="main_menu")
+        builder.button(text="🎬 Вернуться в каталог", callback_data="catalog")
+    builder.button(text="🏠 Главное меню", callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -38,8 +54,8 @@ def exit_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Продолжить", callback_data="lead:continue"),
-                InlineKeyboardButton(text="Выйти", callback_data="lead:exit"),
+                InlineKeyboardButton(text="▶️ Продолжить", callback_data="lead:continue"),
+                InlineKeyboardButton(text="🚪 Выйти", callback_data="lead:exit"),
             ],
         ]
     )

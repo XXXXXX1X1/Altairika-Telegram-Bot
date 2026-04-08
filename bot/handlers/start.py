@@ -7,18 +7,38 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import settings
-from bot.keyboards.main_menu import main_menu_keyboard
+from bot.keyboards.main_menu import about_company_keyboard, main_menu_keyboard
 from bot.repositories.users import upsert_user
-from bot.utils.message_render import show_local_photo_screen
+from bot.utils.message_render import show_local_photo_screen, show_text_screen
 
 router = Router()
 
 WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "Logo.png"
+ABOUT_COMPANY_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "o_nas.png"
 
 WELCOME_TEXT = (
     "Добро пожаловать в Альтаирику!\n\n"
     "Мы создаём образовательные VR/360° фильмы для школ, планетариев и семей.\n\n"
     "Выберите раздел:"
+)
+
+ABOUT_COMPANY_TEXT = (
+    "<b>🏢 О компании Altairika</b>\n\n"
+    "Altairika создаёт образовательные VR и 360° фильмы для детей, школ, планетариев, "
+    "лагерей и семейного досуга.\n\n"
+    "<b>Что делаем</b>\n"
+    "• показываем детям космос, природу, историю, географию и науку через эффект погружения\n"
+    "• проводим выездные сеансы в школах и на мероприятиях\n"
+    "• помогаем сделать обучение более наглядным и интересным\n\n"
+    "<b>Как проходит сеанс</b>\n"
+    "• ребёнок надевает VR-очки и смотрит фильм в формате 360°\n"
+    "• показ проходит в безопасном и понятном формате для детской аудитории\n"
+    "• программы есть для разных возрастов\n\n"
+    "<b>Почему нас выбирают</b>\n"
+    "• большой каталог образовательных фильмов\n"
+    "• международная работа и показы в разных странах\n"
+    "• формат подходит как для занятий, так и для событий\n"
+    "• сочетание технологий, контента и понятной методики показа"
 )
 
 
@@ -48,6 +68,19 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
         WELCOME_IMAGE_PATH,
         WELCOME_TEXT,
         reply_markup=main_menu_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "about_company")
+async def cb_about_company(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await show_local_photo_screen(
+        callback,
+        ABOUT_COMPANY_IMAGE_PATH,
+        ABOUT_COMPANY_TEXT,
+        reply_markup=about_company_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()

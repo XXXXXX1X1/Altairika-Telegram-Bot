@@ -39,6 +39,15 @@ def _short_desc(text: str | None) -> str | None:
     return text[:SHORT_DESC_LEN].rsplit(" ", 1)[0] + "..."
 
 
+def _encoded_tags(payload: dict[str, list[str]] | None) -> str | None:
+    if not payload:
+        return None
+    normalized = {key: values for key, values in payload.items() if values}
+    if not normalized:
+        return None
+    return json.dumps(normalized, ensure_ascii=False)
+
+
 async def _get_or_create_category(
     session: AsyncSession, name: str, cat_cache: dict[str, Category]
 ) -> Category:
@@ -96,9 +105,9 @@ async def sync_catalog(
                 item = CatalogItem(
                     title=p.title,
                     description=p.description,
-                    short_description=_short_desc(p.description),
+                    short_description=p.subtitle or _short_desc(p.description),
                     category_id=cat_id,
-                    tags=json.dumps(p.tags, ensure_ascii=False) if p.tags else None,
+                    tags=_encoded_tags(p.tags),
                     image_url=p.image_url,
                     price=p.price,
                     duration=p.duration,
@@ -113,9 +122,9 @@ async def sync_catalog(
                 changed = False
                 for attr, val in [
                     ("description", p.description),
-                    ("short_description", _short_desc(p.description)),
+                    ("short_description", p.subtitle or _short_desc(p.description)),
                     ("category_id", cat_id),
-                    ("tags", json.dumps(p.tags, ensure_ascii=False) if p.tags else None),
+                    ("tags", _encoded_tags(p.tags)),
                     ("image_url", p.image_url),
                     ("price", p.price),
                     ("duration", p.duration),

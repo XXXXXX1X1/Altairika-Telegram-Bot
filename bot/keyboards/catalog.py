@@ -15,6 +15,7 @@ class CatalogCb(CallbackData, prefix="cat"):
     age: str | None = None
     duration: str | None = None
     theme: str | None = None
+    genre: str | None = None
 
 
 def _short_selection(prefix: str, values: list[str], fallback: str) -> str:
@@ -26,6 +27,13 @@ def _short_selection(prefix: str, values: list[str], fallback: str) -> str:
     return f"{prefix}: {text}"
 
 
+def _short_theme_selection(prefix: str, values: list[str], fallback: str) -> str:
+    if not values:
+        return f"{prefix}: {fallback}"
+    count = len(values)
+    return f"{prefix}: {count} выбрано"
+
+
 def _noop() -> InlineKeyboardButton:
     return InlineKeyboardButton(text=" ", callback_data="noop")
 
@@ -34,12 +42,12 @@ def categories_keyboard(categories: list[Category]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     total = sum(c.item_count for c in categories)
     builder.button(
-        text=f"Все ({total})",
+        text=f"🎞️ Все ({total})",
         callback_data=CatalogCb(action="list", cat_id=0, page=1).pack(),
     )
     for cat in categories:
         builder.button(
-            text=cat.name,
+            text=f"📁 {cat.name}",
             callback_data=CatalogCb(action="list", cat_id=cat.id, page=1).pack(),
         )
     if len(categories) > 5:
@@ -47,7 +55,7 @@ def categories_keyboard(categories: list[Category]) -> InlineKeyboardMarkup:
     else:
         builder.adjust(2)
     builder.row(
-        InlineKeyboardButton(text="← Главное меню", callback_data="main_menu")
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     )
     return builder.as_markup()
 
@@ -105,7 +113,7 @@ def items_list_keyboard(
     if show_filters_button:
         builder.row(
             InlineKeyboardButton(
-                text="Фильтры",
+                text="🔎 Фильтры",
                 callback_data=CatalogCb(
                     action="filters",
                     cat_id=cat_id,
@@ -117,14 +125,14 @@ def items_list_keyboard(
     if show_categories_back:
         builder.row(
             InlineKeyboardButton(
-                text="← Назад к категориям",
+                text="⬅️ Назад к категориям",
                 callback_data=CatalogCb(action="cats").pack(),
             )
         )
     else:
         builder.row(
             InlineKeyboardButton(
-                text="← Главное меню",
+                text="🏠 Главное меню",
                 callback_data="main_menu",
             )
         )
@@ -135,14 +143,14 @@ def item_text_keyboard(
     item_id: int,
     cat_id: int,
     page: int,
-    has_similar: bool,
+    similar_theme_key: str | None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(text="Записаться", callback_data=f"lead:booking:{item_id}"),
+        InlineKeyboardButton(text="📝 Записаться", callback_data=f"lead:booking:{item_id}"),
         InlineKeyboardButton(
-            text="← Назад к списку",
+            text="⬅️ Назад к списку",
             callback_data=CatalogCb(
                 action="list",
                 cat_id=cat_id,
@@ -150,15 +158,16 @@ def item_text_keyboard(
             ).pack(),
         ),
     )
-    row2 = [InlineKeyboardButton(text="Задать вопрос", callback_data="faq")]
-    if has_similar:
+    row2 = [InlineKeyboardButton(text="❓ Задать вопрос", callback_data="faq")]
+    if similar_theme_key:
         row2.append(
             InlineKeyboardButton(
-                text="Похожие",
+                text="✨ Похожие",
                 callback_data=CatalogCb(
-                    action="list",
+                    action="similar",
                     cat_id=cat_id,
                     page=1,
+                    theme=similar_theme_key,
                 ).pack(),
             )
         )
@@ -172,49 +181,49 @@ def filter_menu_keyboard(
     *,
     selected_ages: list[str],
     selected_durations: list[str],
-    selected_themes: list[str],
-    has_themes: bool = False,
+    selected_genres: list[str],
+    has_genres: bool = False,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text=_short_selection("Возраст", selected_ages, "любой"),
+        text=_short_selection("🎂 Возраст", selected_ages, "любой"),
         callback_data=CatalogCb(
             action="filter_age",
             cat_id=cat_id,
         ).pack(),
     )
     builder.button(
-        text=_short_selection("Длительность", selected_durations, "любая"),
+        text=_short_selection("⏱️ Длительность", selected_durations, "любая"),
         callback_data=CatalogCb(
             action="filter_duration",
             cat_id=cat_id,
         ).pack(),
     )
-    if has_themes:
+    if has_genres:
         builder.button(
-            text=_short_selection("Темы", selected_themes, "все"),
+            text=_short_theme_selection("📚 Предметы", selected_genres, "все"),
             callback_data=CatalogCb(
-                action="filter_theme",
+                action="filter_genre",
                 cat_id=cat_id,
             ).pack(),
         )
     builder.adjust(1)
     builder.row(
         InlineKeyboardButton(
-            text="Применить фильтр",
+            text="✅ Применить фильтр",
             callback_data=CatalogCb(action="apply_filters", cat_id=cat_id).pack(),
         )
     )
-    if selected_ages or selected_durations or selected_themes:
+    if selected_ages or selected_durations or selected_genres:
         builder.row(
             InlineKeyboardButton(
-                text="Сбросить фильтры",
+                text="🧹 Сбросить фильтры",
                 callback_data=CatalogCb(action="clear_filters", cat_id=cat_id).pack(),
             )
         )
     builder.row(
         InlineKeyboardButton(
-            text="← Назад к списку",
+            text="⬅️ Назад к списку",
             callback_data=CatalogCb(
                 action="list",
                 cat_id=cat_id,
@@ -235,7 +244,7 @@ def filter_values_keyboard(
     builder = InlineKeyboardBuilder()
 
     for code, label in values:
-        checked = "✓ " if code in selected_values else ""
+        checked = "✅ " if code in selected_values else ""
         builder.row(
             InlineKeyboardButton(
                 text=f"{checked}{label}",
@@ -245,19 +254,20 @@ def filter_values_keyboard(
                     age=code if field == "age" else None,
                     duration=code if field == "duration" else None,
                     theme=code if field == "theme" else None,
+                    genre=code if field == "genre" else None,
                 ).pack(),
             )
         )
 
     builder.row(
         InlineKeyboardButton(
-            text="Применить фильтр",
+            text="✅ Применить фильтр",
             callback_data=CatalogCb(action="apply_filters", cat_id=cat_id).pack(),
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text="← Назад к фильтрам",
+            text="⬅️ Назад к фильтрам",
             callback_data=CatalogCb(action="filters", cat_id=cat_id).pack(),
         )
     )

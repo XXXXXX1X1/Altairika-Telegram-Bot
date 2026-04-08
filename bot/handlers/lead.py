@@ -15,16 +15,20 @@
   /start → сбросить FSM, главное меню
 """
 
+from pathlib import Path
+
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery, FSInputFile, Message, ReplyKeyboardRemove
 
 from bot.config import settings
 from bot.keyboards.lead import (
     after_submit_keyboard,
     confirm_keyboard,
     exit_confirm_keyboard,
+    phone_request_keyboard,
     step_keyboard,
 )
 from bot.keyboards.main_menu import main_menu_keyboard
@@ -45,6 +49,8 @@ router = Router()
 _FORM_CALLBACKS = {
     "lead:submit", "lead:edit", "lead:continue", "lead:exit", "lead:cancel", "lead:skip",
 }
+
+WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "Logo.png"
 
 WELCOME_TEXT = (
     "Добро пожаловать в Альтаирику!\n\n"
@@ -151,6 +157,7 @@ async def step_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(name=name)
+    await _delete_user_message(message)
     await state.set_state(LeadForm.phone)
     await _render_current_step(message.bot, state)
 
@@ -181,7 +188,9 @@ async def step_phone_text(message: Message, state: FSMContext) -> None:
 
 async def _phone_received(message: Message, state: FSMContext, phone: str) -> None:
     data = await state.get_data()
+    await _delete_phone_helper(message.bot, state)
     await state.update_data(phone=phone)
+    await _delete_user_message(message)
     lead_type = data.get("lead_type")
 
     if lead_type == LeadType.booking:
@@ -203,6 +212,7 @@ async def step_time(message: Message, state: FSMContext) -> None:
     if message.text != "Пропустить":
         await state.update_data(preferred_time=(message.text or "").strip() or None)
 
+    await _delete_user_message(message)
     await _show_confirm(message.bot, state)
 
 
@@ -222,6 +232,7 @@ async def step_city(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(city=city)
+    await _delete_user_message(message)
     await _show_confirm(message.bot, state)
 
 
@@ -230,6 +241,7 @@ async def step_city(message: Message, state: FSMContext) -> None:
 # ---------------------------------------------------------------------------
 
 async def _show_confirm(bot: Bot, state: FSMContext) -> None:
+    await _delete_phone_helper(bot, state)
     data = await state.get_data()
     await state.set_state(LeadForm.confirm)
     await _edit_form_message(
@@ -255,6 +267,12 @@ async def step_edit(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(StateFilter(LeadForm.confirm), F.data == "lead:cancel")
 async def step_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await _show_main_menu(callback.bot, state)
+    await callback.answer()
+
+
+@router.callback_query(StateFilter(LeadForm), F.data == "lead:cancel")
+async def cancel_form(callback: CallbackQuery, state: FSMContext) -> None:
     await _show_main_menu(callback.bot, state)
     await callback.answer()
 
@@ -293,6 +311,7 @@ async def step_submit(callback: CallbackQuery, state: FSMContext, session, bot: 
         city=data.get("city"),
     )
 
+    await _delete_phone_helper(bot, state)
     await state.clear()
 
     # Уведомление администратору
@@ -409,30 +428,88 @@ async def _render_current_step(bot: Bot, state: FSMContext, override_text: str |
     if current_state == LeadForm.name.state:
         text = override_text or format_step_prompt(LeadForm.name, lead_type=data.get("lead_type"))
         keyboard = step_keyboard()
+        await _delete_phone_helper(bot, state)
     elif current_state == LeadForm.phone.state:
         text = override_text or format_step_prompt(LeadForm.phone)
         keyboard = step_keyboard()
     elif current_state == LeadForm.time.state:
         text = override_text or format_step_prompt(LeadForm.time)
         keyboard = step_keyboard(allow_skip=True)
+        await _delete_phone_helper(bot, state)
     elif current_state == LeadForm.city.state:
         text = override_text or format_step_prompt(LeadForm.city)
         keyboard = step_keyboard()
+        await _delete_phone_helper(bot, state)
     else:
         return
 
     await _edit_form_message(bot, state, text, reply_markup=keyboard)
+    if current_state == LeadForm.phone.state:
+        await _ensure_phone_helper(bot, state)
 
 
 async def _show_main_menu(bot: Bot, state: FSMContext) -> None:
     data = await state.get_data()
+    await _delete_phone_helper(bot, state)
     await state.clear()
     chat_id = data.get("form_chat_id")
     message_id = data.get("form_message_id")
     if chat_id and message_id:
-        await bot.edit_message_text(
+        await bot.send_photo(
             chat_id=chat_id,
-            message_id=message_id,
-            text=WELCOME_TEXT,
+            photo=FSInputFile(str(WELCOME_IMAGE_PATH)),
+            caption=WELCOME_TEXT,
             reply_markup=main_menu_keyboard(),
+            parse_mode="HTML",
         )
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except TelegramBadRequest:
+            pass
+
+
+async def _ensure_phone_helper(bot: Bot, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("phone_helper_message_id"):
+        return
+
+    chat_id = data.get("form_chat_id")
+    if not chat_id:
+        return
+
+    sent = await bot.send_message(
+        chat_id=chat_id,
+        text="Нажмите кнопку ниже, чтобы Telegram сам отправил ваш номер. Можно и ввести его вручную.",
+        reply_markup=phone_request_keyboard(),
+    )
+    await state.update_data(phone_helper_message_id=sent.message_id)
+
+
+async def _delete_phone_helper(bot: Bot, state: FSMContext) -> None:
+    data = await state.get_data()
+    chat_id = data.get("form_chat_id")
+    message_id = data.get("phone_helper_message_id")
+    if not chat_id or not message_id:
+        return
+
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except TelegramBadRequest:
+        pass
+    try:
+        cleanup = await bot.send_message(
+            chat_id=chat_id,
+            text="Скрываю клавиатуру…",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await bot.delete_message(chat_id=chat_id, message_id=cleanup.message_id)
+    except TelegramBadRequest:
+        pass
+    await state.update_data(phone_helper_message_id=None)
+
+
+async def _delete_user_message(message: Message) -> None:
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass

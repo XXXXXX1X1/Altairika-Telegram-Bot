@@ -31,10 +31,10 @@ _NO_TOPICS_TEXT = (
 
 
 # ---------------------------------------------------------------------------
-# Вход в FAQ (из главного меню или franchise:faq)
+# Вход в FAQ (из главного меню)
 # ---------------------------------------------------------------------------
 
-@router.callback_query(F.data.in_({"faq", "franchise:faq"}))
+@router.callback_query(F.data == "faq")
 async def faq_entry(callback: CallbackQuery, session, state: FSMContext) -> None:
     await state.clear()
     await _show_topics(callback, session)

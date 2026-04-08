@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Статус проекта
 
-Проект находится в рабочем состоянии: реализован Telegram-бот на `aiogram`, настроены PostgreSQL и Alembic, есть автопарсер каталога и сиды для FAQ/сравнения. Актуальная документация лежит в `docs/`.
+Проект находится в рабочем состоянии: реализован Telegram-бот на `aiogram`, настроены PostgreSQL и Alembic, есть ручной парсер каталога и сиды для FAQ/сравнения. Актуальная документация лежит в `docs/`.
 
 ## Документация
 

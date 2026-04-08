@@ -17,10 +17,12 @@ from bot.repositories.catalog import (
     get_active_categories,
     get_available_age_filters,
     get_available_duration_filters,
+    get_available_genre_filters,
     get_available_theme_filters,
     get_item_by_id,
     get_items_page,
     has_similar_items,
+    primary_theme_key,
 )
 from bot.services.catalog import (
     format_item_text,
@@ -55,7 +57,7 @@ def _s(value: str | None) -> str:
 
 
 def _empty_filters() -> dict[str, list[str]]:
-    return {"ages": [], "durations": [], "themes": []}
+    return {"ages": [], "durations": [], "genres": []}
 
 
 async def _get_applied_filters(state: FSMContext) -> dict[str, list[str]]:
@@ -132,7 +134,7 @@ async def show_list(callback: CallbackQuery, callback_data: CatalogCb, session, 
         page=callback_data.page,
         ages=filters["ages"],
         durations=filters["durations"],
-        themes=filters["themes"],
+        genres=filters["genres"],
     )
 
 
@@ -144,14 +146,15 @@ async def _render_list(
     *,
     ages: list[str] | None = None,
     durations: list[str] | None = None,
-    themes: list[str] | None = None,
+    genres: list[str] | None = None,
+    title_override: str | None = None,
 ) -> None:
     total = await count_active_items(
         session,
         cat_id,
         ages=ages,
         durations=durations,
-        themes=themes,
+        genres=genres,
     )
 
     if total == 0:
@@ -162,7 +165,7 @@ async def _render_list(
                 cat_id,
                 selected_ages=ages or [],
                 selected_durations=durations or [],
-                selected_themes=themes or [],
+                selected_genres=genres or [],
             ),
         )
         await callback.answer()
@@ -177,12 +180,12 @@ async def _render_list(
         page,
         ages=ages,
         durations=durations,
-        themes=themes,
+        genres=genres,
     )
 
     categories = await get_active_categories(session)
     show_categories_back = len(categories) > 1
-    available_themes = await get_available_theme_filters(session, cat_id)
+    available_genres = await get_available_genre_filters(session, cat_id)
 
     if cat_id == 0:
         category_name = "Каталог фильмов"
@@ -194,13 +197,13 @@ async def _render_list(
         items,
         page,
         total,
-        category_name,
+        title_override or category_name,
         ages=ages or [],
         durations=durations or [],
-        theme_labels=[
-            _theme_label(theme_key_value, available_themes)
-            for theme_key_value in (themes or [])
-            if _theme_label(theme_key_value, available_themes)
+        genre_labels=[
+            _theme_label(genre_key_value, available_genres)
+            for genre_key_value in (genres or [])
+            if _theme_label(genre_key_value, available_genres)
         ],
     )
     keyboard = items_list_keyboard(
@@ -230,11 +233,12 @@ async def show_item(callback: CallbackQuery, callback_data: CatalogCb, session) 
         return
 
     similar = await has_similar_items(session, item.category_id, item.id)
+    similar_theme = primary_theme_key(item) if similar else None
     keyboard = item_text_keyboard(
         item.id,
         callback_data.cat_id,
         callback_data.page,
-        similar,
+        similar_theme,
     )
 
     if item.image_url:
@@ -253,6 +257,27 @@ async def show_item(callback: CallbackQuery, callback_data: CatalogCb, session) 
     await callback.answer()
 
 
+@router.callback_query(CatalogCb.filter(F.action == "similar"))
+async def show_similar(callback: CallbackQuery, callback_data: CatalogCb, session, state: FSMContext) -> None:
+    theme = _s(callback_data.theme)
+    filters = {"ages": [], "durations": [], "genres": []}
+    await _set_applied_filters(state, filters)
+    await _set_draft_filters(state, filters)
+    available_themes = await get_available_theme_filters(session, callback_data.cat_id)
+    theme_name = _theme_label(theme, available_themes)
+    title = f"Похожие фильмы: {theme_name}" if theme_name else "Похожие фильмы"
+    await _render_list(
+        callback,
+        session,
+        cat_id=callback_data.cat_id,
+        page=1,
+        ages=filters["ages"],
+        durations=filters["durations"],
+        genres=filters["genres"],
+        title_override=title,
+    )
+
+
 @router.callback_query(CatalogCb.filter(F.action == "filters"))
 async def show_filters(callback: CallbackQuery, callback_data: CatalogCb, session, state: FSMContext) -> None:
     draft = await _get_draft_filters(state)
@@ -261,10 +286,10 @@ async def show_filters(callback: CallbackQuery, callback_data: CatalogCb, sessio
         draft = {
             "ages": list(applied["ages"]),
             "durations": list(applied["durations"]),
-            "themes": list(applied["themes"]),
+            "genres": list(applied["genres"]),
         }
         await _set_draft_filters(state, draft)
-    themes = await get_available_theme_filters(session, callback_data.cat_id)
+    genres = await get_available_genre_filters(session, callback_data.cat_id)
     await show_text_screen(
         callback,
         "<b>Фильтры каталога</b>\n\nВыберите, как отфильтровать фильмы:",
@@ -272,8 +297,8 @@ async def show_filters(callback: CallbackQuery, callback_data: CatalogCb, sessio
             callback_data.cat_id,
             selected_ages=draft["ages"],
             selected_durations=draft["durations"],
-            selected_themes=draft["themes"],
-            has_themes=bool(themes),
+            selected_genres=draft["genres"],
+            has_genres=bool(genres),
         ),
         parse_mode="HTML",
     )
@@ -316,28 +341,28 @@ async def show_filter_duration(callback: CallbackQuery, callback_data: CatalogCb
     await callback.answer()
 
 
-@router.callback_query(CatalogCb.filter(F.action == "filter_theme"))
-async def show_filter_theme(callback: CallbackQuery, callback_data: CatalogCb, session, state: FSMContext) -> None:
-    values = await get_available_theme_filters(session, callback_data.cat_id)
+@router.callback_query(CatalogCb.filter(F.action == "filter_genre"))
+async def show_filter_genre(callback: CallbackQuery, callback_data: CatalogCb, session, state: FSMContext) -> None:
+    values = await get_available_genre_filters(session, callback_data.cat_id)
     if not values:
-        await callback.answer("Темы появятся после следующей синхронизации каталога.", show_alert=True)
+        await callback.answer("Предметы появятся после следующей синхронизации каталога.", show_alert=True)
         return
     draft = await _get_draft_filters(state)
     await show_text_screen(
         callback,
-        "<b>Фильтр по темам</b>\n\nМожно выбрать несколько вариантов.",
+        "<b>Фильтр по предметам</b>\n\nМожно выбрать несколько вариантов.",
         reply_markup=filter_values_keyboard(
             callback_data.cat_id,
-            "theme",
+            "genre",
             values,
-            selected_values=set(draft["themes"]),
+            selected_values=set(draft["genres"]),
         ),
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-@router.callback_query(CatalogCb.filter(F.action.in_(["toggle_age", "toggle_duration", "toggle_theme"])))
+@router.callback_query(CatalogCb.filter(F.action.in_(["toggle_age", "toggle_duration", "toggle_genre"])))
 async def toggle_filter_value(callback: CallbackQuery, callback_data: CatalogCb, session, state: FSMContext) -> None:
     draft = await _get_draft_filters(state)
     if callback_data.action == "toggle_age":
@@ -350,9 +375,9 @@ async def toggle_filter_value(callback: CallbackQuery, callback_data: CatalogCb,
         await _set_draft_filters(state, draft)
         await show_filter_duration(callback, callback_data, session, state)
         return
-    draft["themes"] = _toggle_value(draft["themes"], _s(callback_data.theme))
+    draft["genres"] = _toggle_value(draft["genres"], _s(callback_data.genre))
     await _set_draft_filters(state, draft)
-    await show_filter_theme(callback, callback_data, session, state)
+    await show_filter_genre(callback, callback_data, session, state)
 
 
 @router.callback_query(CatalogCb.filter(F.action == "apply_filters"))
@@ -366,7 +391,7 @@ async def apply_filter(callback: CallbackQuery, callback_data: CatalogCb, sessio
         page=1,
         ages=draft["ages"],
         durations=draft["durations"],
-        themes=draft["themes"],
+        genres=draft["genres"],
     )
 
 
@@ -387,7 +412,7 @@ async def back_from_photo(callback: CallbackQuery, callback_data: CatalogCb, ses
         page=callback_data.page,
         ages=filters["ages"],
         durations=filters["durations"],
-        themes=filters["themes"],
+        genres=filters["genres"],
     )
 
 

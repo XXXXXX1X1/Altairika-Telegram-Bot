@@ -1,5 +1,4 @@
 import json
-import re
 from hashlib import md5
 
 from sqlalchemy import select
@@ -9,124 +8,65 @@ from bot.keyboards.catalog import ITEMS_PER_PAGE
 from bot.models.db import CatalogItem, Category
 
 
-_THEME_RULES: list[tuple[str, tuple[str, ...]]] = [
-    (
-        "Космос",
-        (
-            "космос", "планет", "галактик", "звезд", "звёзд", "астро", "марс",
-            "луна", "солнечн", "вселен", "космонав", "ракет", "спутник",
-        ),
-    ),
-    (
-        "Страны и города",
-        (
-            "страны", "страна", "город", "города", "путешеств", "столица",
-            "бангкок", "париж", "лондон", "рим", "росси", "итал", "франц",
-            "япони", "кита", "таиланд", "тайланд", "егип", "инд", "африк",
-            "европ", "ази", "америк",
-        ),
-    ),
-    (
-        "Природа и география",
-        (
-            "океан", "море", "река", "озер", "пустын", "лес", "джунгл",
-            "гор", "вулкан", "водопад", "материк", "остров", "климат",
-            "природ", "географ", "экосистем",
-        ),
-    ),
-    (
-        "Животные",
-        (
-            "животн", "динозав", "акул", "кит", "дельфин", "тигр", "лев",
-            "слон", "птиц", "рыб", "насеком", "медвед", "кошк", "собак",
-            "зоопарк", "обитател",
-        ),
-    ),
-    (
-        "История и цивилизации",
-        (
-            "истор", "древн", "цивилиза", "импер", "рыцар", "замок", "фараон",
-            "египет", "рим", "греци", "средневек", "войн", "археолог",
-        ),
-    ),
-    (
-        "Человек и тело",
-        (
-            "человек", "тело", "орган", "сердц", "мозг", "скелет", "мышц",
-            "здоров", "медицин", "анатом", "иммун",
-        ),
-    ),
-    (
-        "Технологии и изобретения",
-        (
-            "робот", "технолог", "изобрет", "машин", "электр", "энерги",
-            "компьют", "интернет", "программ", "инженер", "механ", "завод",
-        ),
-    ),
-    (
-        "Профессии и общество",
-        (
-            "профес", "работ", "пожарн", "врач", "учител", "строител",
-            "космонавт", "полиц", "спасател", "фермер", "повар",
-        ),
-    ),
-    (
-        "Искусство и культура",
-        (
-            "искусств", "культур", "театр", "музык", "живопис", "худож",
-            "балет", "кино", "литератур", "музей", "архитект",
-        ),
-    ),
-]
-
-
 def _duration_code(value: str | None) -> str:
     if not value:
         return ""
     normalized = value.lower()
-    if "до 5" in normalized:
+    digits = [int(part) for part in "".join(ch if ch.isdigit() else " " for ch in normalized).split()]
+    minutes = digits[0] if digits else 0
+    if not minutes:
+        return ""
+    if minutes <= 5:
         return "d5"
-    if "5" in normalized and "15" in normalized:
+    if minutes <= 15:
         return "d15"
-    if "15" in normalized and "30" in normalized:
+    if minutes <= 30:
         return "d30"
-    if "30" in normalized:
-        return "d30p"
-    return ""
+    return "d30p"
 
 
-def _item_tags(item: CatalogItem) -> list[str]:
-    tags: list[str] = []
-    seen: set[str] = set()
+def _load_tags_payload(item: CatalogItem) -> dict[str, list[str]]:
+    if not item.tags:
+        return {}
 
     try:
-        values = json.loads(item.tags) if item.tags else []
+        payload = json.loads(item.tags)
     except json.JSONDecodeError:
-        values = []
+        return {}
 
-    for value in values:
-        text = str(value).strip()
-        if not text or text in seen:
+    if isinstance(payload, list):
+        return {"themes": [str(value) for value in payload if str(value).strip()]}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    result: dict[str, list[str]] = {}
+    for key, values in payload.items():
+        if not isinstance(values, list):
             continue
-        seen.add(text)
-        tags.append(text)
+        result[key] = [str(value).strip() for value in values if str(value).strip()]
+    return result
 
-    haystack = " ".join(
-        part for part in [item.title or "", item.description or ""] if part
-    ).lower()
-    haystack = re.sub(r"[^a-zа-я0-9+\s-]+", " ", haystack)
 
-    for theme, keywords in _THEME_RULES:
-        if any(keyword in haystack for keyword in keywords):
-            if theme not in seen:
-                seen.add(theme)
-                tags.append(theme)
-
-    return tags
+def item_metadata(item: CatalogItem) -> dict[str, list[str]]:
+    payload = _load_tags_payload(item)
+    return {
+        "genres": payload.get("genres", []),
+        "themes": payload.get("themes", []),
+        "languages": payload.get("languages", []),
+        "formats": payload.get("formats", []),
+    }
 
 
 def theme_key(value: str) -> str:
     return md5(value.encode("utf-8")).hexdigest()[:8]
+
+
+def primary_theme_key(item: CatalogItem) -> str | None:
+    themes = item_metadata(item)["themes"]
+    if not themes:
+        return None
+    return theme_key(themes[0])
 
 
 async def get_active_categories(session: AsyncSession) -> list[Category]:
@@ -144,7 +84,7 @@ async def get_filtered_active_items(
     *,
     ages: list[str] | None = None,
     durations: list[str] | None = None,
-    themes: list[str] | None = None,
+    genres: list[str] | None = None,
 ) -> list[CatalogItem]:
     q = (
         select(CatalogItem)
@@ -161,10 +101,10 @@ async def get_filtered_active_items(
         items = [item for item in items if (item.age_rating or "") in set(ages)]
     if durations:
         items = [item for item in items if _duration_code(item.duration) in set(durations)]
-    if themes:
+    if genres:
         items = [
             item for item in items
-            if set(themes) & {theme_key(tag) for tag in _item_tags(item)}
+            if set(genres) & {theme_key(value) for value in item_metadata(item)["genres"]}
         ]
 
     return items
@@ -176,14 +116,14 @@ async def count_active_items(
     *,
     ages: list[str] | None = None,
     durations: list[str] | None = None,
-    themes: list[str] | None = None,
+    genres: list[str] | None = None,
 ) -> int:
     items = await get_filtered_active_items(
         session,
         category_id,
         ages=ages,
         durations=durations,
-        themes=themes,
+        genres=genres,
     )
     return len(items)
 
@@ -195,14 +135,14 @@ async def get_items_page(
     *,
     ages: list[str] | None = None,
     durations: list[str] | None = None,
-    themes: list[str] | None = None,
+    genres: list[str] | None = None,
 ) -> list[CatalogItem]:
     items = await get_filtered_active_items(
         session,
         category_id,
         ages=ages,
         durations=durations,
-        themes=themes,
+        genres=genres,
     )
     offset = (page - 1) * ITEMS_PER_PAGE
     return items[offset: offset + ITEMS_PER_PAGE]
@@ -253,10 +193,19 @@ async def get_available_duration_filters(session: AsyncSession, category_id: int
     return present
 
 
+async def get_available_genre_filters(session: AsyncSession, category_id: int = 0) -> list[tuple[str, str]]:
+    items = await get_filtered_active_items(session, category_id)
+    genres: dict[str, str] = {}
+    for item in items:
+        for value in item_metadata(item)["genres"]:
+            genres[theme_key(value)] = value
+    return sorted(genres.items(), key=lambda pair: pair[1].lower())
+
+
 async def get_available_theme_filters(session: AsyncSession, category_id: int = 0) -> list[tuple[str, str]]:
     items = await get_filtered_active_items(session, category_id)
     themes: dict[str, str] = {}
     for item in items:
-        for tag in _item_tags(item):
-            themes[theme_key(tag)] = tag
+        for value in item_metadata(item)["themes"]:
+            themes[theme_key(value)] = value
     return sorted(themes.items(), key=lambda pair: pair[1].lower())

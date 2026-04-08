@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.config import settings
 from bot.handlers.catalog import router as catalog_router
-from bot.handlers.compare import router as compare_router
 from bot.handlers.faq import router as faq_router
 from bot.handlers.franchise import router as franchise_router
 from bot.handlers.freetext import router as freetext_router
@@ -32,7 +31,6 @@ async def main() -> None:
     # lead_router раньше остальных: StateFilter перехватывает прерывание формы
     dp.include_router(lead_router)
     dp.include_router(faq_router)
-    dp.include_router(compare_router)
     dp.include_router(catalog_router)
     dp.include_router(franchise_router)
     # freetext_router последним: ловит всё, что не поймали выше
