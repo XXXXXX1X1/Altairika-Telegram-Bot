@@ -149,7 +149,7 @@ async def receive_user_question(
         await message.answer("Пожалуйста, опишите вопрос подробнее:")
         return
 
-    await save_user_question(
+    question = await save_user_question(
         session,
         message.from_user.id,
         text,

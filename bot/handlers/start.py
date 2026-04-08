@@ -119,9 +119,10 @@ async def cmd_sync(message: Message) -> None:
     from bot.parser.sync import sync_catalog
 
     engine = create_async_engine(settings.DATABASE_URL)
-    factory = _sf(engine, expire_on_commit=False)
-    result = await sync_catalog(factory)
-    await engine.dispose()
+    try:
+        result = await sync_catalog(_sf(engine, expire_on_commit=False))
+    finally:
+        await engine.dispose()
 
     await message.answer(
         f"Синхронизация завершена:\n"

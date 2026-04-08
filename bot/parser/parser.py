@@ -83,7 +83,7 @@ def _fetch_text(url: str) -> str:
     with urlopen(
         request,
         timeout=TIMEOUT_SEC,
-        context=ssl._create_unverified_context(),
+        context=ssl.create_default_context(),
     ) as response:
         return response.read().decode("utf-8", errors="replace")
 

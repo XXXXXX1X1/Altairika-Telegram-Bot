@@ -22,7 +22,7 @@ def normalize_phone(raw: str) -> str | None:
     # Приводим российские номера: 8XXXXXXXXXX → +7XXXXXXXXXX
     if len(digits) == 11 and digits.startswith("8"):
         digits = "7" + digits[1:]
-    return f"+{digits}" if not raw.strip().startswith("+") else f"+{digits}"
+    return f"+{digits}"
 
 
 LEAD_TYPE_LABELS = {
@@ -90,15 +90,15 @@ def format_admin_notification(data: dict) -> str:
     lines = [
         f"{prefix} — {label}",
         "",
-        f"Имя: {data['name']}",
-        f"Телефон: {data['phone']}",
+        f"Имя: {escape(data['name'])}",
+        f"Телефон: {escape(data['phone'])}",
     ]
     if data.get("item_title"):
-        lines.append(f"Позиция: {data['item_title']}")
+        lines.append(f"Позиция: {escape(data['item_title'])}")
     if data.get("preferred_time"):
-        lines.append(f"Время: {data['preferred_time']}")
+        lines.append(f"Время: {escape(data['preferred_time'])}")
     if data.get("city"):
-        lines.append(f"Город: {data['city']}")
+        lines.append(f"Город: {escape(data['city'])}")
     if data.get("telegram_user_id"):
         lines.append(f"Telegram ID: {data['telegram_user_id']}")
 

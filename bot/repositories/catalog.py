@@ -59,7 +59,7 @@ def item_metadata(item: CatalogItem) -> dict[str, list[str]]:
 
 
 def theme_key(value: str) -> str:
-    return md5(value.encode("utf-8")).hexdigest()[:8]
+    return md5(value.strip().lower().encode("utf-8")).hexdigest()[:8]
 
 
 def primary_theme_key(item: CatalogItem) -> str | None:

@@ -2,6 +2,7 @@
 
 import math
 from datetime import datetime
+from html import escape
 
 from bot.models.db import Lead, LeadStatus, LeadType, UserQuestion
 from bot.repositories.admin import LEADS_PER_PAGE, QUESTIONS_PER_PAGE
@@ -64,15 +65,15 @@ def format_lead_card(lead: Lead) -> str:
     parts = [
         f"<b>Заявка #{lead.id}</b>",
         f"Тип: {lead_type_label(lead.lead_type)}",
-        f"Имя: {lead.name}",
-        f"Телефон: {lead.phone}",
+        f"Имя: {escape(lead.name)}",
+        f"Телефон: {escape(lead.phone)}",
     ]
     if lead.lead_type == LeadType.booking and lead.catalog_item_id:
         parts.append(f"ID фильма: {lead.catalog_item_id}")
     if lead.city:
-        parts.append(f"Город: {lead.city}")
+        parts.append(f"Город: {escape(lead.city)}")
     if lead.preferred_time:
-        parts.append(f"Удобное время: {lead.preferred_time}")
+        parts.append(f"Удобное время: {escape(lead.preferred_time)}")
     parts.append(f"Создана: {_fmt_dt(lead.created_at)}")
     parts.append(f"Статус: {lead_status_label(lead.status)}")
     return "\n".join(parts)
