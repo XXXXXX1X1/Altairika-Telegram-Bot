@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.services.ai_catalog import (
     extract_movie_title_candidate,
-    extract_params,
     find_movie_by_title,
     find_relevant_films,
     find_similar_movies,
@@ -21,6 +20,7 @@ from bot.services.ai_memory import (
     merge_params,
     update_state,
 )
+from bot.services.ai_movie_params import extract_movie_params
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,12 @@ _BASE_RULES = """Ты — помощник компании Альтаирика
 
 # Дополнительные инструкции по intent'у
 _INTENT_INSTRUCTIONS: dict[str, str] = {
+    "general_chat": (
+        "Пользователь пока не сформулировал точный запрос. "
+        "Ответь нейтрально и коротко: поздоровайся, предложи выбрать направление. "
+        "Например: подбор фильма, рассказ о компании, франшиза, FAQ. "
+        "Не запускай подбор сам и не перечисляй фильмы без запроса."
+    ),
     "movie_selection": (
         "Пользователь хочет подобрать фильм. "
         "Из списка выше выбери 2-3 наиболее подходящих и кратко объясни почему. "
@@ -79,7 +85,11 @@ _INTENT_INSTRUCTIONS: dict[str, str] = {
         "Будь конкретен."
     ),
     "company_info": (
-        "Расскажи о компании на основе базы знаний."
+        "Расскажи о компании на основе базы знаний. "
+        "Если пользователь спрашивает юридический адрес, телефон, email, реквизиты или другие контакты, "
+        "отвечай только если эти данные явно есть в контексте. "
+        "Если точных данных нет, честно скажи, что сейчас не видишь подтверждённой информации, "
+        "и предложи оставить заявку через бота."
     ),
 }
 
@@ -111,7 +121,7 @@ async def generate_answer(
 
     # Для подбора фильмов — ищем в каталоге
     if intent == "movie_selection":
-        new_params = extract_params(user_text, state.get("params", {}))
+        new_params = await extract_movie_params(user_text, state.get("params", {}))
         films = await find_relevant_films(db, new_params)
         catalog_text = format_films_for_prompt(films)
         new_params["last_recommended_ids"] = [f.id for f in films]
@@ -125,6 +135,8 @@ async def generate_answer(
             new_params = {
                 "last_movie_query": title_query,
                 "last_movie_match_ids": [movie.id],
+                "ai_current_item_id": movie.id,
+                "ai_current_item_title": movie.title,
             }
         else:
             similar_movies = await find_similar_movies(db, title_query, limit=5)

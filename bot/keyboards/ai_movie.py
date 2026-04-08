@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 class AiPickCb(CallbackData, prefix="aip"):
-    action: str          # nav | book | refine | newtopic | catalog | exit
+    action: str          # nav | book | refine | newtopic | back | catalog | exit
     idx: int = 0
     item_id: int = 0
 
@@ -84,11 +84,17 @@ def ai_pick_empty_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def ai_pick_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Кнопка отмены во время диалога подбора."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+def ai_pick_cancel_keyboard(show_back: bool = False) -> InlineKeyboardMarkup:
+    """Кнопки во время диалога подбора."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if show_back:
+        rows.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data=AiPickCb(action="back").pack()),
+        ])
+    rows.append(
         [
             InlineKeyboardButton(text="🎬 Весь каталог", callback_data="catalog"),
             InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
-        ],
-    ])
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)

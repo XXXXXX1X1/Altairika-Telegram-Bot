@@ -1,5 +1,7 @@
 """Клиент для вызова OpenRouter API (совместим с OpenAI SDK)."""
+import json
 import logging
+import re
 
 from openai import AsyncOpenAI, APIError, APITimeoutError
 
@@ -25,6 +27,8 @@ async def call_llm(
     system_prompt: str,
     user_message: str,
     history: list[dict[str, str]] | None = None,
+    *,
+    max_tokens: int | None = None,
 ) -> str | None:
     """Вызывает модель и возвращает текст ответа или None при ошибке."""
     if not settings.OPENROUTER_API_KEY:
@@ -41,7 +45,7 @@ async def call_llm(
     try:
         response = await client.chat.completions.create(
             model=settings.AI_MODEL,
-            max_tokens=settings.AI_MAX_TOKENS,
+            max_tokens=max_tokens or settings.AI_MAX_TOKENS,
             messages=messages,
         )
         text = response.choices[0].message.content or None
@@ -56,3 +60,46 @@ async def call_llm(
     except Exception as e:
         logger.exception("Неожиданная ошибка при вызове LLM: %s", e)
         return None
+
+
+def _extract_json_object(text: str) -> dict | None:
+    text = text.strip()
+    if not text:
+        return None
+
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+async def call_llm_json(
+    system_prompt: str,
+    user_message: str,
+    history: list[dict[str, str]] | None = None,
+    *,
+    max_tokens: int = 250,
+) -> dict | None:
+    """Вызывает модель и пытается вернуть JSON-объект."""
+    text = await call_llm(
+        system_prompt,
+        user_message,
+        history=history,
+        max_tokens=max_tokens,
+    )
+    if not text:
+        return None
+    parsed = _extract_json_object(text)
+    if parsed is None:
+        logger.warning("LLM JSON parse failed: %r", text[:300])
+    return parsed

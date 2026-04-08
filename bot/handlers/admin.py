@@ -24,6 +24,7 @@ from bot.keyboards.admin import (
     stats_keyboard,
 )
 from bot.models.db import LeadStatus
+from bot.repositories.catalog import get_item_by_id
 from bot.repositories.admin import (
     get_lead_by_id,
     get_leads_page,
@@ -173,10 +174,11 @@ async def admin_lead_card(
     if lead is None:
         await callback.answer("Заявка не найдена.", show_alert=True)
         return
+    item = await get_item_by_id(session, lead.catalog_item_id) if lead.catalog_item_id else None
 
     await show_text_screen(
         callback,
-        format_lead_card(lead),
+        format_lead_card(lead, item.title if item else None),
         reply_markup=lead_card_keyboard(lead.id, callback_data.page, callback_data.only_new),
         parse_mode="HTML",
     )
@@ -200,10 +202,11 @@ async def admin_lead_status(
     if lead is None:
         await callback.answer("Заявка не найдена.", show_alert=True)
         return
+    item = await get_item_by_id(session, lead.catalog_item_id) if lead.catalog_item_id else None
 
     await show_text_screen(
         callback,
-        format_lead_card(lead),
+        format_lead_card(lead, item.title if item else None),
         reply_markup=lead_card_keyboard(lead.id, callback_data.page, callback_data.only_new),
         parse_mode="HTML",
     )

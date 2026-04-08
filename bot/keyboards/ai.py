@@ -9,21 +9,21 @@ def after_ai_keyboard(intent: str = "") -> InlineKeyboardMarkup:
     if intent in ("movie_selection", "movie_details"):
         builder.row(
             InlineKeyboardButton(text="🎬 Каталог", callback_data="catalog"),
-            InlineKeyboardButton(text="📝 Записаться", callback_data="lead_booking"),
+            InlineKeyboardButton(text="📞 Связаться", callback_data="contact"),
         )
     elif intent in ("franchise_info", "lead_franchise"):
         builder.row(
             InlineKeyboardButton(text="🤝 Франшиза", callback_data="franchise"),
-            InlineKeyboardButton(text="📩 Оставить заявку", callback_data="lead_franchise"),
+            InlineKeyboardButton(text="📩 Оставить заявку", callback_data="lead:franchise"),
         )
     elif intent in ("lead_booking",):
         builder.row(
-            InlineKeyboardButton(text="📝 Оставить заявку", callback_data="lead_booking"),
+            InlineKeyboardButton(text="📞 Связаться", callback_data="contact"),
         )
     else:
         builder.row(
             InlineKeyboardButton(text="🎬 Каталог", callback_data="catalog"),
-            InlineKeyboardButton(text="📝 Записаться", callback_data="lead_booking"),
+            InlineKeyboardButton(text="📞 Связаться", callback_data="contact"),
         )
 
     builder.row(

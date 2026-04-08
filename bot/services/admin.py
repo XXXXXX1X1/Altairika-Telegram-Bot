@@ -61,7 +61,7 @@ def format_leads_list(leads: list[Lead], page: int, total: int) -> str:
     return "\n".join(lines)
 
 
-def format_lead_card(lead: Lead) -> str:
+def format_lead_card(lead: Lead, item_title: str | None = None) -> str:
     parts = [
         f"<b>Заявка #{lead.id}</b>",
         f"Тип: {lead_type_label(lead.lead_type)}",
@@ -69,7 +69,10 @@ def format_lead_card(lead: Lead) -> str:
         f"Телефон: {escape(lead.phone)}",
     ]
     if lead.lead_type == LeadType.booking and lead.catalog_item_id:
-        parts.append(f"Фильм: #{lead.catalog_item_id}")
+        if item_title:
+            parts.append(f"Фильм: {escape(item_title)}")
+        else:
+            parts.append(f"Фильм: #{lead.catalog_item_id}")
     if lead.city:
         parts.append(f"Город: {escape(lead.city)}")
     if lead.preferred_time:

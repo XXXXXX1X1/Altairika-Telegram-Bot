@@ -32,17 +32,37 @@ LEAD_TYPE_LABELS = {
 }
 
 
-def format_step_prompt(state, lead_type: LeadType | None = None) -> str:
+def format_step_prompt(
+    state,
+    lead_type: LeadType | None = None,
+    *,
+    item_title: str | None = None,
+) -> str:
     state_name = getattr(state, "state", state)
     if state_name.endswith("name"):
         if lead_type == LeadType.franchise:
             return (
                 "Оставьте заявку на франшизу, и мы свяжемся с вами в течение одного рабочего дня.\n\n"
-                "<b>Как вас зовут?</b>"
+                "<b>Как вас зовут?</b>\n\n"
+                "Можете ввести имя вручную или использовать имя из Telegram."
             )
         if lead_type == LeadType.contact:
-            return "Оставьте контакт, и мы перезвоним вам.\n\n<b>Как вас зовут?</b>"
-        return "<b>Как вас зовут?</b>\n\nНапишите ваше имя:"
+            return (
+                "Оставьте контакт, и мы перезвоним вам.\n\n"
+                "<b>Как вас зовут?</b>\n\n"
+                "Можете ввести имя вручную или использовать имя из Telegram."
+            )
+        if item_title:
+            return (
+                "Оставьте заявку на этот фильм, и мы свяжемся с вами в ближайшее рабочее время.\n\n"
+                f"<b>Фильм:</b> {escape(item_title)}\n\n"
+                "<b>Как вас зовут?</b>\n\n"
+                "Можете ввести имя вручную или использовать имя из Telegram."
+            )
+        return (
+            "<b>Как вас зовут?</b>\n\n"
+            "Можете ввести имя вручную или использовать имя из Telegram."
+        )
     if state_name.endswith("phone"):
         return "<b>Ваш номер телефона?</b>\n\nВведите номер в формате +79991234567."
     if state_name.endswith("time"):
@@ -51,7 +71,7 @@ def format_step_prompt(state, lead_type: LeadType | None = None) -> str:
             "Укажите пожелание или нажмите «Пропустить»."
         )
     if state_name.endswith("city"):
-        return "<b>Ваш город или регион?</b>"
+        return "<b>В каком вы городе или регионе?</b>\n\nНапишите город или регион."
     return ""
 
 
@@ -65,9 +85,7 @@ def format_confirmation(data: dict) -> str:
         f"Телефон: {escape(data['phone'])}",
     ]
     if data.get("item_title"):
-        lines.append(f"Позиция: {escape(data['item_title'])}")
-    if data.get("preferred_time"):
-        lines.append(f"Удобное время: {escape(data['preferred_time'])}")
+        lines.append(f"Фильм: {escape(data['item_title'])}")
     if data.get("city"):
         lines.append(f"Город: {escape(data['city'])}")
 
@@ -93,9 +111,7 @@ def format_admin_notification(data: dict) -> str:
         f"Телефон: {escape(data['phone'])}",
     ]
     if data.get("item_title"):
-        lines.append(f"Позиция: {escape(data['item_title'])}")
-    if data.get("preferred_time"):
-        lines.append(f"Время: {escape(data['preferred_time'])}")
+        lines.append(f"Фильм: {escape(data['item_title'])}")
     if data.get("city"):
         lines.append(f"Город: {escape(data['city'])}")
     if data.get("telegram_user_id"):

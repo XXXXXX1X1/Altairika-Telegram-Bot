@@ -18,7 +18,10 @@ async def load_state(db: AsyncSession, telegram_user_id: int) -> dict:
     if session is None:
         return {}
     try:
-        return json.loads(session.state_json or "{}")
+        state = json.loads(session.state_json or "{}")
+        if isinstance(state, dict) and session.active_intent:
+            state["_active_intent"] = session.active_intent
+        return state if isinstance(state, dict) else {}
     except json.JSONDecodeError:
         logger.warning("Невалидный state_json для user %d", telegram_user_id)
         return {}

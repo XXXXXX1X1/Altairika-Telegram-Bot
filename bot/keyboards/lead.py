@@ -7,13 +7,24 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-def step_keyboard(*, allow_skip: bool = False) -> InlineKeyboardMarkup:
+def step_keyboard(*, allow_skip: bool = False, allow_use_telegram_name: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if allow_skip:
         builder.button(text="⏭️ Пропустить", callback_data="lead:skip")
     builder.button(text="✖️ Отмена", callback_data="lead:cancel")
     builder.adjust(2 if allow_skip else 1)
     return builder.as_markup()
+
+
+def name_request_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👤 Использовать имя из Telegram")],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Или введите имя вручную",
+    )
 
 
 def phone_request_keyboard() -> ReplyKeyboardMarkup:

@@ -3,7 +3,13 @@ import re
 
 from bot.services.ai_catalog import extract_movie_title_candidate
 
-_DEFAULT_INTENT = "company_info"
+_DEFAULT_INTENT = "general_chat"
+
+_GENERAL_CHAT_PHRASES = (
+    "привет", "здравствуйте", "добрый день", "добрый вечер", "доброе утро",
+    "хай", "hello", "начнем", "начнём", "поговорим", "что ты умеешь",
+    "что умеешь", "помоги", "помощь",
+)
 
 _LEAD_BOOKING_PHRASES = (
     "запишите", "записаться", "запись", "забронировать", "хочу заказать",
@@ -18,7 +24,8 @@ _LEAD_FRANCHISE_PHRASES = (
     "звонок по франшизе", "нужен звонок по франшизе", "свяжитесь по франшизе",
 )
 _COMPETITOR_PHRASES = (
-    "конкурент", "лучше чем", "чем вы лучше", "сравни", "сравните",
+    "конкурент", "конкуренты", "о ваших конкурентах", "ваши конкуренты",
+    "лучше чем", "чем вы лучше", "сравни", "сравните",
     "чем отличаетесь", "другие компании", "аналоги", "альтернативы",
     "сравнение", "сопоставь", "в чем отличие", "в чем разница",
 )
@@ -40,6 +47,8 @@ _COMPANY_PHRASES = (
     "ваша компания", "чем занимаетесь", "как давно", "сколько фильмов",
     "сколько партнеров", "сколько партнёров", "где работаете", "в каких городах",
     "ваши контакты", "где вы работаете", "кто такие", "чем вы занимаетесь",
+    "юридический адрес", "юр адрес", "реквизиты", "как связаться", "связаться с вами",
+    "ваш адрес", "ваш телефон", "ваш сайт", "контакты компании", "контакты альтаирика",
 )
 
 _MOVIE_SELECTION_PHRASES = (
@@ -47,6 +56,7 @@ _MOVIE_SELECTION_PHRASES = (
     "рекомендуйте", "что есть про", "есть ли фильм", "фильм для", "фильмы для",
     "что посмотреть", "покажи фильм", "подборка", "нужен фильм", "подскажи фильм",
     "подберите фильм", "какие фильмы", "что у вас есть", "нужны фильмы",
+    "хочу фильм", "ищу фильм", "мне нужен фильм",
 )
 _MOVIE_SELECTION_THEME_WORDS = (
     "космос", "природа", "история", "животные", "наука", "физика",
@@ -67,7 +77,10 @@ _MOVIE_TITLE_EXCLUDE = {
     "зачем", "когда", "можно", "нужно", "сколько", "альтаирика", "франшиза",
     "компания", "безопасно", "сеанс", "показ", "оборудование", "каталог",
     "вопрос", "ответ", "условия", "инвестиции", "заявка", "заявку",
-    "оставить", "оставлю", "оставьте", "хочу",
+    "оставить", "оставлю", "оставьте", "хочу", "привет", "здравствуйте",
+    "добрый", "день", "вечер", "утро", "поговорить", "помоги",
+    "контент", "отличия", "отличаетесь", "разница", "конкуренты", "конкурентах",
+    "лучше", "хуже", "сравнение",
 }
 
 
@@ -108,12 +121,17 @@ def _has_duration_pattern(text: str) -> bool:
 def _looks_like_movie_selection(text: str) -> bool:
     if _contains_any(text, _MOVIE_SELECTION_PHRASES):
         return True
+    if text.startswith("тема "):
+        return True
     if _has_grade_pattern(text) or _has_age_pattern(text) or _has_duration_pattern(text):
         return True
     if any(word in text for word in _MOVIE_AUDIENCE_WORDS + _MOVIE_DURATION_WORDS):
         return True
+    tokens = _tokens(text)
+    if len(tokens) <= 2 and any(token in _MOVIE_SELECTION_THEME_WORDS for token in tokens):
+        return True
     if any(word in text for word in _MOVIE_SELECTION_THEME_WORDS) and (
-        "фильм" in text or "фильмы" in text or "подоб" in text or "что есть" in text
+        "фильм" in text or "фильмы" in text or "подоб" in text or "что есть" in text or "тема" in text
     ):
         return True
     return False
@@ -122,6 +140,12 @@ def _looks_like_movie_selection(text: str) -> bool:
 def _looks_like_movie_details(text: str) -> bool:
     if _contains_any(text, _MOVIE_DETAILS_PHRASES):
         return True
+
+    tokens = _tokens(text)
+    if len(tokens) <= 2 and any(token in _MOVIE_SELECTION_THEME_WORDS for token in tokens):
+        return False
+    if text.startswith("тема "):
+        return False
 
     title_candidate = extract_movie_title_candidate(text)
     if not title_candidate:
@@ -197,9 +221,21 @@ def _score_company_info(text: str) -> int:
     return score
 
 
+def _score_general_chat(text: str) -> int:
+    score = 0
+    if _contains_any(text, _GENERAL_CHAT_PHRASES):
+        score += 4
+    tokens = _tokens(text)
+    if len(tokens) <= 2 and any(token in {"привет", "здравствуйте", "помоги"} for token in tokens):
+        score += 4
+    return score
+
+
 def _score_movie_selection(text: str) -> int:
     score = 0
     if _contains_any(text, _MOVIE_SELECTION_PHRASES):
+        score += 4
+    if text.startswith("тема "):
         score += 4
     if _has_grade_pattern(text):
         score += 3
@@ -209,6 +245,9 @@ def _score_movie_selection(text: str) -> int:
         score += 3
     if any(word in text for word in _MOVIE_SELECTION_THEME_WORDS):
         score += 2
+    tokens = _tokens(text)
+    if len(tokens) <= 2 and any(token in _MOVIE_SELECTION_THEME_WORDS for token in tokens):
+        score += 3
     if any(word in text for word in _MOVIE_AUDIENCE_WORDS):
         score += 2
     if "фильм" in text or "фильмы" in text:
@@ -220,7 +259,12 @@ def _score_movie_details(text: str) -> int:
     score = 0
     if _contains_any(text, _MOVIE_DETAILS_PHRASES):
         score += 4
-    if extract_movie_title_candidate(text):
+    tokens = _tokens(text)
+    if len(tokens) <= 2 and any(token in _MOVIE_SELECTION_THEME_WORDS for token in tokens):
+        return 0
+    if text.startswith("тема "):
+        return 0
+    if _looks_like_movie_details(text):
         score += 3
     if "фильм" in text and any(word in text for word in ("расскажи", "описание", "про что", "длится", "возраст")):
         score += 2
@@ -234,6 +278,7 @@ def detect_intent(text: str) -> str:
         return _DEFAULT_INTENT
 
     scores = {
+        "general_chat": _score_general_chat(normalized),
         "lead_booking": _score_lead_booking(normalized),
         "lead_franchise": _score_lead_franchise(normalized),
         "competitor_compare": _score_competitor_compare(normalized),
@@ -249,6 +294,10 @@ def detect_intent(text: str) -> str:
     if _looks_like_movie_details(normalized):
         scores["movie_details"] += 2
 
+    non_general_scores = {k: v for k, v in scores.items() if k != "general_chat"}
+    if any(score > 0 for score in non_general_scores.values()) and len(_tokens(normalized)) > 1:
+        scores["general_chat"] = 0
+
     # В конфликте между подбором и карточкой фильма отдаём приоритет подбору,
     # если пользователь явно задаёт параметры аудитории/длительности.
     if scores["movie_selection"] >= 5 and (
@@ -259,6 +308,7 @@ def detect_intent(text: str) -> str:
     # Для лидов и сравнения оставляем более высокий приоритет, чтобы не уводить
     # явные коммерческие намерения в общую консультацию.
     priority = [
+        "general_chat",
         "lead_franchise",
         "lead_booking",
         "competitor_compare",

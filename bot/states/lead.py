@@ -5,6 +5,6 @@ class LeadForm(StatesGroup):
     name = State()
     phone = State()
     time = State()       # только для booking
-    city = State()       # только для franchise
+    city = State()
     confirm = State()
     exit_confirm = State()  # пауза при попытке прервать форму

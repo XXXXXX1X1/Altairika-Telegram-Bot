@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from bot.keyboards.franchise import (
     FranchiseAdvantageCb,
@@ -116,6 +116,21 @@ async def franchise_main(callback: CallbackQuery, session) -> None:
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+async def send_franchise_main_message(message: Message, session) -> None:
+    content = await get_franchise_content(session, FranchiseSection.pitch)
+    text = content.content if content else (
+        "<b>Франшиза Альтаирика</b>\n\n"
+        "Станьте партнёром и откройте собственный центр виртуальной реальности.\n"
+        "Более 14 лет на рынке, 3 млн зрителей, партнёры в 12 странах."
+    )
+    await message.answer_photo(
+        photo=FSInputFile(str(FRANCHISE_IMAGE_PATH)),
+        caption=text,
+        reply_markup=franchise_main_keyboard(),
+        parse_mode="HTML",
+    )
 
 
 # ---------------------------------------------------------------------------

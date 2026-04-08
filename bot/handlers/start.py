@@ -22,7 +22,7 @@ ABOUT_COMPANY_IMAGE_PATH = Path(__file__).resolve().parents[2] / "photo" / "sect
 _WELCOME_TEXT = (
     "Добро пожаловать в Альтаирику!\n\n"
     "Мы создаём образовательные VR/360° фильмы для школ, планетариев и семей.\n\n"
-    "Выберите раздел ниже или просто напишите в чат, что вам нужно.\n\n"
+    "Выберите раздел ниже или просто напишите в чат, что вам интересно.\n\n"
     "Например: «подберите фильм про космос», «расскажи о фильме Бангкок», "
     "«как проходит сеанс»."
 )
@@ -62,6 +62,17 @@ async def cmd_start(message: Message, session, state: FSMContext) -> None:
         first_name=message.from_user.first_name,
         language_code=message.from_user.language_code,
     )
+    await log_event(session, message.from_user.id, "open_main_menu")
+    await message.answer_photo(
+        photo=FSInputFile(str(WELCOME_IMAGE_PATH)),
+        caption=_WELCOME_TEXT,
+        reply_markup=main_menu_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+async def send_main_menu_message(message: Message, session, state: FSMContext) -> None:
+    await state.clear()
     await log_event(session, message.from_user.id, "open_main_menu")
     await message.answer_photo(
         photo=FSInputFile(str(WELCOME_IMAGE_PATH)),

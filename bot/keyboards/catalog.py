@@ -151,7 +151,7 @@ def item_text_keyboard(
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(text="📝 Записаться", callback_data=f"lead:booking:{item_id}"),
+        InlineKeyboardButton(text="📝 Записаться на этот фильм", callback_data=f"lead:booking:{item_id}"),
         InlineKeyboardButton(
             text="⬅️ Назад к списку",
             callback_data=CatalogCb(action="list", cat_id=cat_id, page=page).pack(),

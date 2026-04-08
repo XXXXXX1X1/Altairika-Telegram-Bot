@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.db import CatalogItem
+from bot.services.ai_client import call_llm_json
 from bot.repositories.catalog import (
     get_active_items,
     get_filtered_active_items,
@@ -16,6 +17,7 @@ _THEME_KEYWORDS: dict[str, list[str]] = {
     "космос": ["космос", "вселенная", "планета", "астрономия", "звезда", "орбита"],
     "природа": ["природа", "животные", "экология", "лес", "океан", "море", "земля"],
     "история": ["история", "древний", "средневековье", "война", "прошлое"],
+    "динозавры": ["динозавр", "динозавры", "динозавров", "доистор", "юрский"],
     "физика": ["физика", "наука", "эксперимент", "энергия"],
     "биология": ["биология", "организм", "клетка", "тело", "анатомия"],
     "география": ["география", "страна", "континент", "путешествие", "мир"],
@@ -52,8 +54,29 @@ _TITLE_TRAILING_WORDS = {
 _QUERY_STOPWORDS = {
     "расскажи", "подскажи", "покажи", "опиши", "мне", "о", "про",
     "фильм", "фильме", "фильма", "кино", "мультфильм", "мультфильме",
-    "что", "за", "информация", "описание", "пожалуйста",
+    "что", "за", "информация", "описание", "пожалуйста", "хочу",
+    "нужен", "нужна", "нужно", "нужны", "об", "для", "какой", "какие",
+    "дай", "дайте", "подборку", "подбери", "подберите", "по", "есть",
+    "какие", "какая", "какое", "какую", "у", "вас", "мне", "нужно",
+    "нужна", "нужен", "нужны", "хочу", "давай",
 }
+
+_AI_MOVIE_SEARCH_PROMPT = """Ты помогаешь подобрать фильмы из каталога Альтаирики по свободному запросу пользователя.
+
+Тебе передан запрос и список кандидатов из каталога. Нужно выбрать только те фильмы, которые действительно подходят по смыслу.
+
+Верни ТОЛЬКО JSON такого вида:
+{
+  "matched_ids": [1, 2, 3]
+}
+
+Правила:
+- Выбирай фильмы по теме, описанию и смыслу запроса пользователя.
+- Если тема пользователя не совпадает с готовыми тегами, всё равно ищи по описанию и содержанию фильма.
+- Не добавляй id, если фильм явно не подходит.
+- Если подходящих фильмов нет, верни пустой список.
+- Не выбирай фильм только из-за одного случайного слова.
+"""
 
 
 def normalize_text(text: str) -> str:
@@ -66,7 +89,36 @@ def normalize_text(text: str) -> str:
 
 def tokenize_text(text: str) -> list[str]:
     """Разбивает нормализованный текст на токены без короткого мусора."""
-    return [token for token in normalize_text(text).split() if len(token) >= 2]
+    return [token for token in normalize_text(text).split() if len(token) >= 3]
+
+
+def normalize_theme_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = normalize_text(value)
+    if not normalized:
+        return None
+    if normalized in _THEME_KEYWORDS:
+        return normalized
+    for theme, keywords in _THEME_KEYWORDS.items():
+        if normalized == theme:
+            return theme
+        if any(keyword in normalized or normalized in keyword for keyword in keywords):
+            return theme
+    return normalized
+
+
+def _token_matches(token: str, searchable_tokens: set[str]) -> bool:
+    if token in searchable_tokens:
+        return True
+    if len(token) < 4:
+        return False
+    prefix = token[:5]
+    return any(
+        candidate.startswith(prefix) or prefix.startswith(candidate[:5])
+        for candidate in searchable_tokens
+        if len(candidate) >= 4
+    )
 
 
 def _cleanup_title_candidate(text: str) -> str:
@@ -192,6 +244,7 @@ def extract_params(text: str, existing_state: dict) -> dict:
     """Извлекает параметры подбора из текста пользователя."""
     params = dict(existing_state)
     lower = text.lower()
+    params["raw_query"] = normalize_text(text)
 
     # Класс
     grade_match = re.search(r"(\d{1,2})\s*класс", lower)
@@ -289,7 +342,97 @@ def _score_item(item: CatalogItem, params: dict) -> int:
                 score += 1
                 break
 
+    raw_query = params.get("raw_query")
+    if raw_query:
+        query_tokens = [token for token in tokenize_text(raw_query) if token not in _QUERY_STOPWORDS]
+        searchable = " ".join([
+            normalize_text(item.title or ""),
+            normalize_text(item.short_description or ""),
+            normalize_text(item.description or ""),
+            all_tags,
+        ])
+        searchable_tokens = set(tokenize_text(searchable))
+        overlap = sum(1 for token in query_tokens if _token_matches(token, searchable_tokens))
+        if overlap:
+            score += min(overlap, 4)
+
     return score
+
+
+def _searchable_text(item: CatalogItem) -> str:
+    meta = item_metadata(item)
+    return " ".join([
+        normalize_text(item.title or ""),
+        normalize_text(item.short_description or ""),
+        normalize_text(item.description or ""),
+        normalize_text(" ".join(meta["genres"])),
+        normalize_text(" ".join(meta["themes"])),
+    ]).strip()
+
+
+def _semantic_shortlist(items: list[CatalogItem], params: dict, limit: int = 12) -> list[CatalogItem]:
+    raw_query = params.get("raw_query", "")
+    query_tokens = [token for token in tokenize_text(raw_query) if token not in _QUERY_STOPWORDS]
+    scored: list[tuple[CatalogItem, float]] = []
+
+    for item in items:
+        searchable_text = _searchable_text(item)
+        searchable_tokens = set(tokenize_text(searchable_text))
+        overlap = sum(1 for token in query_tokens if _token_matches(token, searchable_tokens))
+        base_score = _score_item(item, params)
+        score = base_score + overlap * 2
+        if overlap > 0 or base_score > 0:
+            scored.append((item, score))
+
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return [item for item, _ in scored[:limit]]
+
+
+def _format_candidate_for_ai(item: CatalogItem) -> str:
+    meta = item_metadata(item)
+    parts = [f"id={item.id}", f"title={item.title}"]
+    if item.short_description:
+        parts.append(f"short={item.short_description[:220]}")
+    if item.description:
+        parts.append(f"description={item.description[:420]}")
+    if meta["themes"]:
+        parts.append(f"themes={', '.join(meta['themes'])}")
+    if meta["genres"]:
+        parts.append(f"genres={', '.join(meta['genres'])}")
+    if item.age_rating:
+        parts.append(f"age={item.age_rating}")
+    if item.duration:
+        parts.append(f"duration={item.duration}")
+    return " | ".join(parts)
+
+
+async def _ai_rank_films_by_query(
+    raw_query: str,
+    candidates: list[CatalogItem],
+    limit: int,
+) -> list[CatalogItem]:
+    if not raw_query or not candidates:
+        return []
+
+    candidates_text = "\n".join(_format_candidate_for_ai(item) for item in candidates)
+    payload = await call_llm_json(
+        _AI_MOVIE_SEARCH_PROMPT + f"\n\nЗапрос пользователя: {raw_query}\n\nКандидаты:\n{candidates_text}",
+        raw_query,
+        max_tokens=220,
+    )
+    if not payload:
+        return []
+
+    matched_ids = payload.get("matched_ids")
+    if not isinstance(matched_ids, list):
+        return []
+
+    matched_id_set = {int(value) for value in matched_ids if isinstance(value, int) or (isinstance(value, str) and value.isdigit())}
+    if not matched_id_set:
+        return []
+
+    ordered = [item for item in candidates if item.id in matched_id_set]
+    return ordered[:limit]
 
 
 async def find_relevant_films(
@@ -335,8 +478,20 @@ async def find_relevant_films(
         ]
         if fallback:
             return fallback[:limit]
-        # Совсем ничего — возвращаем пустой список (честнее чем нерелевантное)
+        raw_query = params.get("raw_query")
+        if raw_query:
+            ai_candidates = _semantic_shortlist(items, params, limit=max(limit * 3, 10))
+            ai_ranked = await _ai_rank_films_by_query(raw_query, ai_candidates, limit)
+            if ai_ranked:
+                return ai_ranked
         return []
+
+    raw_query = params.get("raw_query")
+    if raw_query:
+        ai_candidates = _semantic_shortlist(items, params, limit=max(limit * 3, 10))
+        ai_ranked = await _ai_rank_films_by_query(raw_query, ai_candidates, limit)
+        if ai_ranked:
+            return ai_ranked
 
     # Без темы — возвращаем топ по score (или просто первые если score=0 у всех)
     return [item for item, _ in scored[:limit]]

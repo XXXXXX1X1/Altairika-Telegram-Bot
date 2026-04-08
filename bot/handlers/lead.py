@@ -2,10 +2,10 @@
 Обработчики форм сбора заявок (Фазы 3–4).
 
 Флоу для booking:
-  lead:booking:{item_id}  →  name  →  phone  →  time  →  confirm  →  submit
+  lead:booking:{item_id}  →  name  →  phone  →  city  →  confirm  →  submit
 
 Флоу для contact (/contact или кнопка «Связаться»):
-  lead:contact  →  name  →  phone  →  confirm  →  submit
+  lead:contact  →  name  →  phone  →  city  →  confirm  →  submit
 
 Флоу для franchise:
   lead:franchise  →  name  →  phone  →  city  →  confirm  →  submit
@@ -30,6 +30,7 @@ from bot.keyboards.lead import (
     after_submit_keyboard,
     confirm_keyboard,
     exit_confirm_keyboard,
+    name_request_keyboard,
     phone_request_keyboard,
     step_keyboard,
 )
@@ -73,7 +74,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext, session) -> 
 
     screen = await show_text_screen(
         callback,
-        format_step_prompt(LeadForm.name),
+        format_step_prompt(LeadForm.name, item_title=item.title if item else None),
         reply_markup=step_keyboard(),
         parse_mode="HTML",
     )
@@ -153,6 +154,8 @@ async def start_contact(event, state: FSMContext, session) -> None:
 @router.message(StateFilter(LeadForm.name))
 async def step_name(message: Message, state: FSMContext) -> None:
     name = (message.text or "").strip()
+    if name == "👤 Использовать имя из Telegram":
+        name = (message.from_user.first_name or "").strip()
     if len(name) < 2:
         await _render_current_step(
             message.bot,
@@ -162,6 +165,7 @@ async def step_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(name=name)
+    await _delete_name_helper(message.bot, state)
     await _delete_user_message(message)
     await state.set_state(LeadForm.phone)
     await _render_current_step(message.bot, state)
@@ -192,37 +196,16 @@ async def step_phone_text(message: Message, state: FSMContext) -> None:
 
 
 async def _phone_received(message: Message, state: FSMContext, phone: str) -> None:
-    data = await state.get_data()
     await _delete_phone_helper(message.bot, state)
     await state.update_data(phone=phone)
     await _delete_user_message(message)
-    lead_type = data.get("lead_type")
-
-    if lead_type == LeadType.booking:
-        await state.set_state(LeadForm.time)
-        await _render_current_step(message.bot, state)
-    elif lead_type == LeadType.franchise:
-        await state.set_state(LeadForm.city)
-        await _render_current_step(message.bot, state)
-    else:
-        await _show_confirm(message.bot, state)
+    await state.set_state(LeadForm.city)
+    await _render_current_step(message.bot, state)
 
 
 # ---------------------------------------------------------------------------
-# Шаг 3 — Время (только для booking)
 # ---------------------------------------------------------------------------
-
-@router.message(StateFilter(LeadForm.time))
-async def step_time(message: Message, state: FSMContext) -> None:
-    if message.text != "Пропустить":
-        await state.update_data(preferred_time=(message.text or "").strip() or None)
-
-    await _delete_user_message(message)
-    await _show_confirm(message.bot, state)
-
-
-# ---------------------------------------------------------------------------
-# Шаг 3б — Город (только для franchise)
+# Шаг 3 — Город
 # ---------------------------------------------------------------------------
 
 @router.message(StateFilter(LeadForm.city))
@@ -246,6 +229,7 @@ async def step_city(message: Message, state: FSMContext) -> None:
 # ---------------------------------------------------------------------------
 
 async def _show_confirm(bot: Bot, state: FSMContext) -> None:
+    await _delete_name_helper(bot, state)
     await _delete_phone_helper(bot, state)
     data = await state.get_data()
     await state.set_state(LeadForm.confirm)
@@ -264,7 +248,11 @@ async def step_edit(callback: CallbackQuery, state: FSMContext) -> None:
     await _edit_form_message(
         callback.bot,
         state,
-        format_step_prompt(LeadForm.name, lead_type=(await state.get_data()).get("lead_type")),
+        format_step_prompt(
+            LeadForm.name,
+            lead_type=(await state.get_data()).get("lead_type"),
+            item_title=(await state.get_data()).get("item_title"),
+        ),
         reply_markup=step_keyboard(),
     )
     await callback.answer()
@@ -279,13 +267,6 @@ async def step_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(StateFilter(LeadForm), F.data == "lead:cancel")
 async def cancel_form(callback: CallbackQuery, state: FSMContext) -> None:
     await _show_main_menu(callback.bot, state)
-    await callback.answer()
-
-
-@router.callback_query(StateFilter(LeadForm.time), F.data == "lead:skip")
-async def step_skip_time(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(preferred_time=None)
-    await _show_confirm(callback.bot, state)
     await callback.answer()
 
 
@@ -385,7 +366,7 @@ async def exit_continue(callback: CallbackQuery, state: FSMContext) -> None:
     # Восстанавливаем предыдущее состояние (шаг подтверждения или текущий)
     # Проще всего — вернуть на confirm если данные уже есть, иначе на name
     lead_type = data.get("lead_type")
-    if data.get("phone") and (lead_type != LeadType.franchise or data.get("city")):
+    if data.get("phone") and data.get("city"):
         await state.set_state(LeadForm.confirm)
         await _edit_form_message(
             callback.bot,
@@ -393,7 +374,7 @@ async def exit_continue(callback: CallbackQuery, state: FSMContext) -> None:
             format_confirmation(data),
             reply_markup=confirm_keyboard(),
         )
-    elif data.get("phone") and lead_type == LeadType.franchise:
+    elif data.get("phone"):
         await state.set_state(LeadForm.city)
         await _render_current_step(callback.bot, state)
     elif data.get("name"):
@@ -439,30 +420,35 @@ async def _render_current_step(bot: Bot, state: FSMContext, override_text: str |
     data = await state.get_data()
     current_state = await state.get_state()
     if current_state == LeadForm.name.state:
-        text = override_text or format_step_prompt(LeadForm.name, lead_type=data.get("lead_type"))
+        text = override_text or format_step_prompt(
+            LeadForm.name,
+            lead_type=data.get("lead_type"),
+            item_title=data.get("item_title"),
+        )
         keyboard = step_keyboard()
         await _delete_phone_helper(bot, state)
     elif current_state == LeadForm.phone.state:
         text = override_text or format_step_prompt(LeadForm.phone)
         keyboard = step_keyboard()
-    elif current_state == LeadForm.time.state:
-        text = override_text or format_step_prompt(LeadForm.time)
-        keyboard = step_keyboard(allow_skip=True)
-        await _delete_phone_helper(bot, state)
+        await _delete_name_helper(bot, state)
     elif current_state == LeadForm.city.state:
         text = override_text or format_step_prompt(LeadForm.city)
         keyboard = step_keyboard()
+        await _delete_name_helper(bot, state)
         await _delete_phone_helper(bot, state)
     else:
         return
 
     await _edit_form_message(bot, state, text, reply_markup=keyboard)
-    if current_state == LeadForm.phone.state:
+    if current_state == LeadForm.name.state:
+        await _ensure_name_helper(bot, state)
+    elif current_state == LeadForm.phone.state:
         await _ensure_phone_helper(bot, state)
 
 
 async def _show_main_menu(bot: Bot, state: FSMContext) -> None:
     data = await state.get_data()
+    await _delete_name_helper(bot, state)
     await _delete_phone_helper(bot, state)
     await state.clear()
     chat_id = data.get("form_chat_id")
@@ -496,6 +482,46 @@ async def _ensure_phone_helper(bot: Bot, state: FSMContext) -> None:
         reply_markup=phone_request_keyboard(),
     )
     await state.update_data(phone_helper_message_id=sent.message_id)
+
+
+async def _ensure_name_helper(bot: Bot, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("name_helper_message_id"):
+        return
+
+    chat_id = data.get("form_chat_id")
+    if not chat_id:
+        return
+
+    sent = await bot.send_message(
+        chat_id=chat_id,
+        text="Нажмите кнопку ниже, чтобы использовать имя из Telegram. Можно и ввести имя вручную.",
+        reply_markup=name_request_keyboard(),
+    )
+    await state.update_data(name_helper_message_id=sent.message_id)
+
+
+async def _delete_name_helper(bot: Bot, state: FSMContext) -> None:
+    data = await state.get_data()
+    chat_id = data.get("form_chat_id")
+    message_id = data.get("name_helper_message_id")
+    if not chat_id or not message_id:
+        return
+
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except TelegramBadRequest:
+        pass
+    try:
+        cleanup = await bot.send_message(
+            chat_id=chat_id,
+            text=".",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await bot.delete_message(chat_id=chat_id, message_id=cleanup.message_id)
+    except TelegramBadRequest:
+        pass
+    await state.update_data(name_helper_message_id=None)
 
 
 async def _delete_phone_helper(bot: Bot, state: FSMContext) -> None:

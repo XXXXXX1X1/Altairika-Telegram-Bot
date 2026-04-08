@@ -4,7 +4,7 @@ from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from bot.keyboards.catalog import (
     CatalogCb,
@@ -104,6 +104,27 @@ async def catalog_entry(callback: CallbackQuery, session, state: FSMContext) -> 
     await _set_draft_filters(state, _empty_filters())
     await log_event(session, callback.from_user.id, "open_catalog")
     await _show_categories(callback, session)
+
+
+async def send_catalog_entry_message(message: Message, session, state: FSMContext) -> None:
+    await _set_applied_filters(state, _empty_filters())
+    await _set_draft_filters(state, _empty_filters())
+    await log_event(session, message.from_user.id, "open_catalog")
+    categories = await get_active_categories(session)
+
+    if not categories:
+        await message.answer(_EMPTY_CATALOG_TEXT)
+        return
+
+    await message.answer_photo(
+        photo=FSInputFile(str(CATALOG_IMAGE_PATH)),
+        caption=(
+            "<b>Каталог</b>\n\nВыберите категорию или просмотрите всё.\n"
+            "Если удобнее, просто напишите в чат тему или параметры фильма."
+        ),
+        reply_markup=categories_keyboard(categories),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(CatalogCb.filter(F.action == "cats"))
@@ -411,4 +432,3 @@ async def back_from_photo(callback: CallbackQuery, callback_data: CatalogCb, ses
 @router.callback_query(F.data == "noop")
 async def noop(callback: CallbackQuery) -> None:
     await callback.answer()
-
