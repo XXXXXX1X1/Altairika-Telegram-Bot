@@ -170,7 +170,7 @@ def item_text_keyboard(
 
     if item_url:
         builder.row(
-            InlineKeyboardButton(text="🌐 На сайте", url=item_url)
+            InlineKeyboardButton(text="🌐 Перейти на сайт", url=item_url)
         )
 
     return builder.as_markup()
