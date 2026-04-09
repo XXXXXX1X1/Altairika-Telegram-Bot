@@ -108,6 +108,20 @@ def decide_next_intent(user_text: str, state: dict | None = None) -> dict[str, o
                 "open_current_movie_card": False,
             }
 
+    # Если пользователь явно переключился на другую содержательную ветку,
+    # не удерживаем его в franchise/compare follow-up только из-за слов "да" или "расскажи".
+    if current_intent and detected_intent in {
+        "company_info",
+        "faq_answer",
+        "franchise_info",
+        "competitor_compare",
+        "movie_selection",
+        "movie_details",
+        "lead_booking",
+        "lead_franchise",
+    } and detected_intent != current_intent:
+        return decision
+
     if current_intent != "movie_selection":
         if _should_continue_competitor_compare(user_text, state):
             return {
