@@ -4,7 +4,8 @@
       "WebFetch(domain:altairika.ru)",
       "Bash(python3 -m py_compile bot/handlers/faq.py bot/handlers/start.py bot/repositories/catalog.py bot/services/lead.py bot/services/admin.py bot/parser/parser.py)",
       "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('/Users/xxx/Рабочий стол/TG/docker-compose.yml'\\)\\)\")",
-      "Bash(.venv/bin/python3 -c \"from bot.config import settings; from bot.handlers import faq, lead, catalog, start; from bot.keyboards import franchise; print\\('OK'\\)\")"
+      "Bash(.venv/bin/python3 -c \"from bot.config import settings; from bot.handlers import faq, lead, catalog, start; from bot.keyboards import franchise; print\\('OK'\\)\")",
+      "Bash(python3 -c ':*)"
     ]
   }
 }
