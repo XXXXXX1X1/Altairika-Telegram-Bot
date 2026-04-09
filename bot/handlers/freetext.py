@@ -11,7 +11,7 @@ from aiogram.fsm.state import default_state
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.handlers.ai_movie import run_ai_pick_flow, send_movie_card_message
+from bot.handlers.ai_movie import run_ai_pick_flow, send_movie_card_message, show_movie_candidates
 from bot.handlers.catalog import send_catalog_entry_message
 from bot.handlers.franchise import send_franchise_main_message
 from bot.handlers.start import send_main_menu_message
@@ -20,8 +20,10 @@ from bot.keyboards.ai import after_ai_keyboard, ai_fallback_keyboard
 from bot.keyboards.faq import freetext_keyboard
 from bot.services.ai_answer import generate_answer
 from bot.services.ai_branch import decide_next_intent
+from bot.services.ai_catalog import extract_movie_title_candidate, find_movie_by_title, find_similar_movies
 from bot.services.ai_decision import analyze_dialog_scenario
-from bot.services.ai_memory import get_history, load_state
+from bot.services.ai_memory import append_history, get_history, load_state, update_state
+from bot.services.ai_rate_limit import check_ai_rate_limit
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -60,6 +62,14 @@ _FRANCHISE_INFO_GUARD_HINTS = (
     "какие условия", "что входит во франшизу", "паушальный взнос",
     "роялти", "окупаемость",
 )
+_UI_CATALOG_INVITE_HINTS = (
+    "открыть каталог", "открой каталог", "показать каталог", "покажи каталог",
+    "скинуть каталог", "перейти в каталог",
+)
+_UI_FRANCHISE_INVITE_HINTS = (
+    "открыть раздел франшизы", "открой франшизу", "показать франшизу",
+    "перейти в раздел франшизы", "открыть франшизу",
+)
 
 
 @router.message(StateFilter(default_state))
@@ -75,6 +85,14 @@ async def freetext_handler(message: Message, session: AsyncSession, state: FSMCo
         return
 
     user_text = message.text or ""
+
+    # Rate limiting: не более 50 AI-запросов за 5 минут с одного пользователя
+    if not check_ai_rate_limit(message.from_user.id):
+        await message.answer(
+            "Слишком много запросов. Пожалуйста, подождите несколько минут и попробуйте снова.",
+            reply_markup=ai_fallback_keyboard(),
+        )
+        return
 
     ai_state = await load_state(session, message.from_user.id)
     ui_action = _detect_ui_action(user_text, ai_state)
@@ -115,6 +133,41 @@ async def freetext_handler(message: Message, session: AsyncSession, state: FSMCo
     if decision.get("open_current_movie_card") and ai_state.get("ai_current_item_id"):
         await send_movie_card_message(message, session, ai_state["ai_current_item_id"])
         return
+
+    if intent == "movie_details":
+        title_query = (extract_movie_title_candidate(user_text) or user_text).strip()
+        movie = await find_movie_by_title(session, title_query)
+        if movie:
+            updated_state = dict(ai_state)
+            updated_state.update({
+                "ai_current_item_id": movie.id,
+                "ai_current_item_title": movie.title,
+                "last_movie_query": title_query,
+                "last_movie_match_ids": [movie.id],
+            })
+            updated_state = append_history(
+                updated_state,
+                user_text=user_text,
+                assistant_text=f"Открываю карточку фильма «{movie.title}».",
+            )
+            await update_state(session, message.from_user.id, "movie_details", updated_state)
+            await send_movie_card_message(message, session, movie.id)
+            return
+        similar_movies = await find_similar_movies(session, title_query, limit=5)
+        if similar_movies:
+            header = (
+                f"Точного совпадения по названию «{title_query}» не нашёл.\n\n"
+                "Возможно, вы имели в виду один из этих фильмов:"
+            )
+            await show_movie_candidates(
+                message,
+                state,
+                session,
+                similar_movies,
+                header_text=header,
+                params={"last_movie_query": title_query},
+            )
+            return
 
     ai_query = user_text
     if decision.get("use_current_movie") and ai_state.get("ai_current_item_title"):
@@ -161,9 +214,9 @@ def _detect_ui_action(user_text: str, ai_state: dict) -> str | None:
         if not assistant_messages:
             return None
         last_assistant = assistant_messages[-1]
-        if "каталог" in last_assistant:
+        if any(hint in last_assistant for hint in _UI_CATALOG_INVITE_HINTS):
             return "catalog"
-        if "франшиз" in last_assistant:
+        if any(hint in last_assistant for hint in _UI_FRANCHISE_INVITE_HINTS):
             return "franchise"
 
     return None

@@ -13,9 +13,11 @@ from bot.models.db import (
 logger = logging.getLogger(__name__)
 
 # Путь к базе знаний компании
-_KNOWLEDGE_FILE = Path(__file__).parent.parent.parent / "docs" / "work" / "10_company_knowledge.md"
+_KNOWLEDGE_FILE = Path(__file__).parent.parent.parent / "docs" / "work" / "company_knowledge.md"
+_MARKET_RESEARCH_FILE = Path(__file__).parent.parent.parent / "docs" / "work" / "market_research.md"
 
 _knowledge_cache: str | None = None
+_market_research_cache: str | None = None
 
 
 def load_company_knowledge() -> str:
@@ -29,6 +31,44 @@ def load_company_knowledge() -> str:
     except FileNotFoundError:
         logger.error("Файл базы знаний не найден: %s", _KNOWLEDGE_FILE)
         return ""
+
+
+def load_market_research_summary() -> str:
+    """Загружает краткую исследовательскую сводку по конкурентам."""
+    global _market_research_cache
+    if _market_research_cache is not None:
+        return _market_research_cache
+
+    try:
+        raw = _MARKET_RESEARCH_FILE.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error("Файл исследования рынка не найден: %s", _MARKET_RESEARCH_FILE)
+        return ""
+
+    markers = [
+        "## 1. Короткий вывод",
+        "## 4. Карта конкурентов Altairika",
+        "## 5. Сравнительная таблица по ключевым игрокам",
+        "## 6. Почему Altairika выглядит сильнее конкурентов",
+        "## 7. Сравнение Altairika с ключевыми конкурентами по сути",
+        "## 13. Краткий вердикт в одной фразе",
+    ]
+    chunks: list[str] = []
+    for marker in markers:
+        start = raw.find(marker)
+        if start == -1:
+            continue
+        tail = raw[start:]
+        next_idx = tail.find("\n## ", len(marker))
+        section = tail if next_idx == -1 else tail[:next_idx]
+        chunks.append(section.strip())
+
+    if not chunks:
+        _market_research_cache = ""
+        return ""
+
+    _market_research_cache = "=== Исследование рынка и конкурентов ===\n" + "\n\n".join(chunks)
+    return _market_research_cache
 
 
 async def get_faq_context(db: AsyncSession) -> str:
@@ -152,6 +192,9 @@ async def build_context(
         compare = await get_compare_context(db)
         if compare:
             parts.append(compare)
+        research = load_market_research_summary()
+        if research:
+            parts.append(research)
 
     # Каталог фильмов — для подбора и вопросов о конкретном фильме
     if intent in ("movie_selection", "movie_details") and extra_catalog_text:

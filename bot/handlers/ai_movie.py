@@ -32,6 +32,19 @@ from bot.services.ai_catalog import extract_params as extract_params_regex, find
 from bot.services.ai_decision import analyze_dialog_scenario
 from bot.services.ai_memory import load_state as load_ai_state, update_state as save_ai_state
 from bot.services.ai_movie_params import extract_movie_params
+from bot.services.ai_pick_service import (
+    LEAD_INTENTS,
+    NO_NEW_PARAMS_TEXT,
+    build_selection_question,
+    describe_params,
+    group_theme_labels,
+    has_meaningful_movie_params,
+    has_new_constraints,
+    looks_like_refine_request,
+    resolve_movie_action,
+    should_ask_for_selection_details,
+    should_refine_existing_selection,
+)
 from bot.services.catalog import format_item_text
 from bot.states.ai_movie import AiPick
 from bot.utils.message_render import show_photo_screen, show_text_screen
@@ -53,37 +66,10 @@ _REFINE_QUESTION = (
     "Уточните запрос — например по возрасту, длительности или теме:"
 )
 
-_SELECTION_START_QUESTION = (
-    "🎬 <b>Давайте подберём фильм</b>\n\n"
-    "Напишите, что важно для подбора: тему, возраст, класс или длительность.\n\n"
-    "Например:\n"
-    "• «ПДД для 2 класса»\n"
-    "• «история, 7 лет»\n"
-    "• «природа, до 20 минут»\n\n"
-    "Можно начать и с одного параметра, например: «космос»."
-)
-
 _NEW_TOPIC_QUESTION = (
     "Хорошо! Напишите новую тему или параметры — подберу другие фильмы:"
 )
 
-_REFINE_REQUEST_HINTS = (
-    "уточним", "уточнить", "давай уточним", "хочу уточнить",
-    "давай подробнее", "подробнее", "сузим", "сужай", "давай сузим",
-)
-
-_NO_NEW_PARAMS_TEXT = (
-    "Пока не вижу новых параметров.\n\n"
-    "Напишите, что именно уточнить: тему, возраст, класс или длительность.\n\n"
-    "Например: «ПДД, 7 лет» или «до 15 минут, начальная школа»."
-)
-
-_LEAD_INTENTS = {"lead_booking", "lead_franchise"}
-_MOVIE_PARAM_KEYS = ("theme", "grade", "age", "audience", "duration")
-_THEME_LIST_HINTS = (
-    "какие есть темы", "какие темы", "список тем", "покажи темы",
-    "какие есть направления", "какие направления", "что есть по темам",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +203,17 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
     if not decision or decision.get("confidence", 0.0) < 0.45:
         decision = decide_next_intent(user_text, decision_state)
     detected_intent = decision["intent"]
-    action = _resolve_movie_action(decision, user_text, current_state, data)
+    action = resolve_movie_action(decision, user_text, current_state, data)
+
+    inferred_params = extract_params_regex(user_text, {})
+    if (
+        current_state in {AiPick.waiting.state, AiPick.refine.state}
+        and detected_intent in {"general_chat", "movie_details"}
+        and not decision.get("open_current_movie_card")
+        and has_meaningful_movie_params(inferred_params)
+    ):
+        detected_intent = "movie_selection"
+        action = "run_search"
 
     if detected_intent != "movie_selection":
         await _clear_ai_pick_messages(message.bot, state)
@@ -227,7 +223,7 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
             await send_movie_card_message(message, session, data["ai_current_item_id"])
             return
 
-        if detected_intent in _LEAD_INTENTS:
+        if detected_intent in LEAD_INTENTS:
             if detected_intent == "lead_booking":
                 reply = "Отлично! Нажмите кнопку ниже чтобы оставить заявку на сеанс:"
             else:
@@ -253,10 +249,10 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
     existing_params = {}
     if current_state == AiPick.refine.state:
         existing_params = data.get("ai_params", {})
-    elif _should_refine_existing_selection(user_text, data):
+    elif should_refine_existing_selection(user_text, data):
         existing_params = data.get("ai_params", {})
 
-    if current_state == AiPick.waiting.state and action == "ask_clarification" and _looks_like_refine_request(user_text):
+    if current_state == AiPick.waiting.state and action == "ask_clarification" and looks_like_refine_request(user_text):
         await _delete_ai_pick_prompt(message.bot, state)
         await state.set_state(AiPick.refine)
         sent = await message.answer(
@@ -279,7 +275,7 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
     # Извлекаем параметры из запроса пользователя
     params = await extract_movie_params(user_text, existing_params)
 
-    if action == "ask_clarification" or _should_ask_for_selection_details(current_state, existing_params, params):
+    if action == "ask_clarification" or should_ask_for_selection_details(current_state, existing_params, params):
         await _send_selection_question(
             message,
             state,
@@ -290,11 +286,11 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
         )
         return
 
-    if current_state == AiPick.refine.state and not _has_new_constraints(existing_params, params):
+    if current_state == AiPick.refine.state and not has_new_constraints(existing_params, params):
         show_back = bool(data.get("ai_back_enabled"))
         await _delete_ai_pick_prompt(message.bot, state)
         sent = await message.answer(
-            _NO_NEW_PARAMS_TEXT,
+            NO_NEW_PARAMS_TEXT,
             reply_markup=ai_pick_cancel_keyboard(show_back=show_back),
             parse_mode="HTML",
         )
@@ -313,10 +309,16 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
     if not films:
         await _clear_ai_pick_messages(message.bot, state)
         sent = await message.answer(
-            "По вашему запросу ничего не нашлось. Попробуйте другую тему или более общий запрос.",
-            reply_markup=ai_pick_empty_keyboard(),
+            "По такой теме пока не нашёл подходящих фильмов.\n\n"
+            "Покажу популярные направления, чтобы можно было выбрать ближе к тому, что вам нужно:",
+            reply_markup=ai_pick_cancel_keyboard(show_back=bool(data.get("ai_back_enabled"))),
         )
-        await state.update_data(ai_prompt_msg_id=sent.message_id, ai_prompt_chat_id=sent.chat.id, ai_back_enabled=False)
+        await state.update_data(
+            ai_prompt_msg_id=sent.message_id,
+            ai_prompt_chat_id=sent.chat.id,
+            ai_back_enabled=bool(data.get("ai_back_enabled")),
+        )
+        await _send_theme_list(message, state, session)
         return
 
     await _clear_ai_pick_messages(message.bot, state)
@@ -326,7 +328,7 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
     await state.update_data(ai_item_ids=item_ids, ai_params=params, ai_back_enabled=False)
 
     # Формируем заголовок подборки
-    topic = _describe_params(params)
+    topic = describe_params(params)
     header = f"Нашёл <b>{len(films)}</b> фильм{'ов' if len(films) >= 5 else 'а' if len(films) >= 2 else ''}"
     if topic:
         header += f" — {topic}"
@@ -361,24 +363,53 @@ async def run_ai_pick_flow(message: Message, state: FSMContext, session) -> None
     await state.set_state(AiPick.waiting)
 
 
-def _describe_params(params: dict) -> str:
-    """Краткое описание найденных параметров для заголовка."""
-    parts = []
-    theme = params.get("theme")
-    if theme:
-        parts.append(f"тема «{theme}»")
-    grade = params.get("grade")
-    if grade:
-        parts.append(f"{grade} класс")
-    elif params.get("audience") == "preschool":
-        parts.append("дошкольники")
-    elif params.get("audience") == "primary":
-        parts.append("начальная школа")
-    duration = params.get("duration")
-    if duration:
-        labels = {"d5": "до 5 мин", "d15": "до 15 мин", "d30": "до 30 мин", "d30p": "30+ мин"}
-        parts.append(labels.get(duration, ""))
-    return ", ".join(p for p in parts if p)
+async def show_movie_candidates(
+    message: Message,
+    state: FSMContext,
+    session,
+    films: list,
+    *,
+    header_text: str,
+    params: dict | None = None,
+) -> None:
+    """Показывает список фильмов как карточную подборку с листанием."""
+    if not films:
+        return
+
+    await _clear_ai_pick_messages(message.bot, state)
+
+    item_ids = [f.id for f in films]
+    params = params or {}
+    await state.update_data(ai_item_ids=item_ids, ai_params=params, ai_back_enabled=False)
+
+    header_message = await message.answer(header_text, parse_mode="HTML")
+    await state.update_data(ai_header_msg_id=header_message.message_id, ai_header_chat_id=header_message.chat.id)
+
+    first = films[0]
+    card_message = await _show_item_card_message(message, first, 0, len(films))
+    await state.update_data(
+        ai_card_msg_id=card_message.message_id,
+        ai_card_chat_id=card_message.chat.id,
+        ai_current_item_id=first.id,
+        ai_current_item_title=first.title,
+        ai_current_idx=0,
+        ai_flow_step="showing_results",
+        ai_back_enabled=False,
+    )
+
+    persisted_state = await load_ai_state(session, message.from_user.id)
+    persisted_state.update({
+        "params": params,
+        "ai_params": params,
+        "last_recommended_ids": item_ids,
+        "last_movie_match_ids": item_ids,
+        "ai_current_item_id": first.id,
+        "ai_current_item_title": first.title,
+        "ai_current_idx": 0,
+        "ai_flow_step": "showing_results",
+    })
+    await save_ai_state(session, message.from_user.id, "movie_selection", persisted_state)
+    await state.set_state(AiPick.waiting)
 
 
 async def _show_item_card(
@@ -469,33 +500,6 @@ async def send_movie_card_message(message: Message, session, item_id: int) -> No
     )
 
 
-def _looks_like_refine_request(text: str) -> bool:
-    lower = text.lower().strip()
-    return any(hint in lower for hint in _REFINE_REQUEST_HINTS)
-
-
-def _resolve_movie_action(decision: dict, user_text: str, current_state: str | None, data: dict) -> str:
-    action = str(decision.get("action") or "").strip()
-    if action:
-        return action
-    existing_params = data.get("ai_params") or {}
-    inferred_params = extract_params_regex(user_text, existing_params)
-    if _has_meaningful_movie_params(inferred_params):
-        return "run_search"
-    if _wants_theme_list(user_text):
-        return "show_themes"
-    if current_state == AiPick.waiting.state and _looks_like_refine_request(user_text):
-        return "ask_clarification"
-    if existing_params or data.get("ai_item_ids"):
-        return "run_search"
-    return "ask_clarification"
-
-
-def _wants_theme_list(text: str) -> bool:
-    lower = text.lower().strip()
-    return any(hint in lower for hint in _THEME_LIST_HINTS)
-
-
 async def _send_theme_list(message: Message, state: FSMContext, session) -> None:
     themes_text = await _build_theme_list_text(session)
     data = await state.get_data()
@@ -524,7 +528,7 @@ async def _build_theme_list_text(session) -> str:
             "Напишите тему своими словами, и я попробую подобрать фильм."
         )
 
-    grouped = _group_theme_labels([label for _, label in theme_filters])
+    grouped = group_theme_labels([label for _, label in theme_filters])
     lines = []
     for group_name, labels in grouped:
         preview = ", ".join(labels[:3])
@@ -536,40 +540,6 @@ async def _build_theme_list_text(session) -> str:
         f"{chr(10).join(lines)}\n\n"
         "Напишите тему, которая вам подходит, и я подберу фильмы."
     )
-
-
-def _group_theme_labels(labels: list[str]) -> list[tuple[str, list[str]]]:
-    groups: list[tuple[str, tuple[str, ...]]] = [
-        ("Космос", ("космос", "вселен", "астроном", "солн", "звезд", "планет", "галак")),
-        ("История", ("истори", "древн", "рим", "средневек", "войн", "цивилиза")),
-        ("Природа", ("природ", "живот", "океан", "водопад", "эколог", "лес", "мор", "земл")),
-        ("Города и путешествия", ("город", "страна", "путешеств", "россия", "москва", "алтай")),
-        ("Наука", ("математ", "физик", "биолог", "хим", "наук", "анатом")),
-        ("ПДД и безопасность", ("пдд", "дорож", "безопас")),
-    ]
-
-    grouped: dict[str, list[str]] = {name: [] for name, _ in groups}
-    other: list[str] = []
-
-    for label in labels:
-        normalized = label.lower().replace("ё", "е")
-        matched = False
-        for group_name, keywords in groups:
-            if any(keyword in normalized for keyword in keywords):
-                grouped[group_name].append(label)
-                matched = True
-                break
-        if not matched:
-            other.append(label)
-
-    result = [(name, values[:4]) for name, values in grouped.items() if values]
-    if other:
-        result.append(("Другое", other[:4]))
-    return result[:6]
-
-
-def _has_meaningful_movie_params(params: dict) -> bool:
-    return any(params.get(key) for key in _MOVIE_PARAM_KEYS)
 
 
 async def _save_ai_pick_snapshot(state: FSMContext) -> None:
@@ -603,7 +573,7 @@ async def _restore_ai_pick_snapshot(message: Message, state: FSMContext, session
         return False
 
     params = snapshot.get("ai_params") or {}
-    topic = _describe_params(params)
+    topic = describe_params(params)
     header = f"Нашёл <b>{len(item_ids)}</b> фильм{'ов' if len(item_ids) >= 5 else 'а' if len(item_ids) >= 2 else ''}"
     if topic:
         header += f" — {topic}"
@@ -643,7 +613,7 @@ async def _send_selection_question(
     await state.set_state(AiPick.waiting)
     show_back = bool(data.get("ai_back_enabled"))
     sent = await message.answer(
-        _build_selection_question(existing_params, params),
+        build_selection_question(existing_params, params),
         reply_markup=ai_pick_cancel_keyboard(show_back=show_back),
         parse_mode="HTML",
     )
@@ -661,58 +631,6 @@ async def _send_selection_question(
         "ai_flow_step": next_step,
     })
     await save_ai_state(session, message.from_user.id, "movie_selection", persisted_state)
-
-
-def _should_ask_for_selection_details(current_state: str | None, existing_params: dict, params: dict) -> bool:
-    if _has_meaningful_movie_params(params):
-        return False
-    if current_state == AiPick.refine.state:
-        return True
-    if existing_params:
-        return False
-    return True
-
-
-def _build_selection_question(existing_params: dict, params: dict) -> str:
-    if params.get("needs_clarification"):
-        reason = params.get("clarification_reason")
-        if isinstance(reason, str) and reason.strip():
-            return (
-                "🎬 <b>Давайте уточним подбор</b>\n\n"
-                f"{reason.strip()}\n\n"
-                "Напишите тему, возраст, класс или длительность.\n\n"
-                "Например: «история, 7 лет» или «ПДД до 20 минут»."
-            )
-    if existing_params:
-        return _NO_NEW_PARAMS_TEXT
-    return _SELECTION_START_QUESTION
-
-
-def _has_new_constraints(existing_params: dict, new_params: dict) -> bool:
-    for key in _MOVIE_PARAM_KEYS:
-        if existing_params.get(key) != new_params.get(key):
-            return True
-    return False
-
-
-def _should_refine_existing_selection(user_text: str, data: dict) -> bool:
-    existing_params = data.get("ai_params") or {}
-    if not existing_params or not data.get("ai_item_ids"):
-        return False
-
-    lower = user_text.lower()
-    new_params = extract_params_regex(user_text, existing_params)
-    if _has_new_constraints(existing_params, new_params):
-        return True
-
-    return any(
-        hint in lower
-        for hint in (
-            "тема", "возраст", "лет", "класс", "длительность", "минут", "мин",
-            "дошколь", "начальн", "средн", "пдд", "космос", "природ", "истори",
-            "животн", "наук", "географ", "биолог", "обж", "английск",
-        )
-    )
 
 
 async def _delete_ai_pick_header(bot, state: FSMContext) -> None:

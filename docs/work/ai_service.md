@@ -13,7 +13,8 @@
 
 ```env
 OPENROUTER_API_KEY=sk-or-...
-AI_MODEL=google/gemini-2.0-flash-001
+AI_MODEL=openai/gpt-4o-mini
+AI_ROUTING_MODEL=openai/gpt-4.1-nano
 AI_MAX_TOKENS=600
 AI_SESSION_TTL_MINUTES=30
 ```
@@ -68,7 +69,7 @@ AI_SESSION_TTL_MINUTES=30
 - правила переключения веток
 - особые случаи (franchise_info vs lead_franchise, movie_selection vs movie_details)
 
-Возвращает JSON, `max_tokens=220`.
+Возвращает JSON, `max_tokens=220`. Использует `AI_ROUTING_MODEL`.
 
 ### 4. Промпт извлечения параметров (`ai_movie_params.py`)
 
@@ -88,7 +89,7 @@ AI_SESSION_TTL_MINUTES=30
 
 ### 5. Промпт AI-ранжирования фильмов (`ai_catalog.py`)
 
-Используется только при семантическом поиске (когда тема не попала в keyword-маппинг). Получает список кандидатов (id + title + description + tags), возвращает `{ "matched_ids": [...] }`, `max_tokens=220`.
+Используется только при семантическом поиске (когда тема не попала в keyword-маппинг). Получает список кандидатов (id + title + description + tags), возвращает `{ "matched_ids": [...] }`, `max_tokens=220`. Использует `AI_ROUTING_MODEL`.
 
 ---
 
@@ -100,6 +101,8 @@ AI_SESSION_TTL_MINUTES=30
 | 2 | `extract_movie_params` | Если intent = movie_selection |
 | 3 | `_ai_rank_films_by_query` (ранжирование) | Если movie_selection + нет keyword-match |
 | 4 | `call_llm` (генерация ответа) | Всегда кроме lead_* и UI-команд |
+
+**Модели:** служебные шаги идут через `AI_ROUTING_MODEL`, финальная генерация ответа — через `AI_MODEL`.
 
 **Итого:** обычно 1-2 вызова, максимум 4 вызова на один запрос пользователя.
 
@@ -188,5 +191,6 @@ AI_SESSION_TTL_MINUTES=30
 | Добавить тему для подбора фильмов | `ai_catalog.py` | `_THEME_KEYWORDS` |
 | Изменить маппинг класс → возраст | `ai_catalog.py` | `_GRADE_TO_AGE` |
 | Обновить базу знаний о компании | `docs/work/10_company_knowledge.md` | Редактировать файл + перезапустить бот |
-| Сменить модель | `.env` | `AI_MODEL=...` |
+| Сменить модель ответа | `.env` | `AI_MODEL=...` |
+| Сменить модель routing / JSON | `.env` | `AI_ROUTING_MODEL=...` |
 | Увеличить лимит ответа | `.env` | `AI_MAX_TOKENS=...` |

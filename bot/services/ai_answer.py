@@ -24,6 +24,16 @@ from bot.services.ai_movie_params import extract_movie_params
 
 logger = logging.getLogger(__name__)
 
+_EXPLICIT_MOVIE_REQUEST_HINTS = (
+    "расскажи про фильм", "расскажи о фильме", "что за фильм", "описание фильма",
+    "информация о фильме", "о фильме", "про фильм", "фильм ",
+    "по конкретному фильму", "о конкретном фильме", "конкретный фильм",
+)
+_GENERIC_MOVIE_REQUEST_VALUES = {
+    "фильм", "о фильме", "про фильм", "конкретный фильм", "конкретному фильму",
+    "по конкретному фильму", "о конкретном фильме",
+}
+
 # Базовые правила для всех промптов
 _BASE_RULES = """Ты — помощник компании Альтаирика в Telegram-боте.
 
@@ -36,7 +46,8 @@ _BASE_RULES = """Ты — помощник компании Альтаирика
 - Язык: только русский
 - Если вопрос не про Альтаирику — мягко верни к теме компании
 - Не называй конкретные цены без данных в контексте
-- Не упоминай источник данных в обычном ответе: не пиши «на сайте указано», «в базе знаний сказано», «по данным контекста», если пользователь сам не просит источник
+- Строго запрещено упоминать сайт как источник в обычном ответе: не пиши «на сайте указано», «на сайте», «на странице», «по данным сайта», даже если эти слова есть в контексте
+- Не упоминай источник данных в обычном ответе: не пиши «в базе знаний сказано», «по данным контекста», если пользователь сам не просит источник
 - Сообщай факты напрямую и естественно, как ответ ассистента, а не как пересказ документа
 
 --- ДАННЫЕ АЛЬТАИРИКИ ---
@@ -60,6 +71,9 @@ _INTENT_INSTRUCTIONS: dict[str, str] = {
     "movie_details": (
         "Пользователь спрашивает про конкретный фильм. "
         "Если в контексте есть один найденный фильм — ответь только по нему. "
+        "Ответ должен быть содержательным: коротко объясни, о чём фильм, чем он может быть интересен, "
+        "и добавь важные факты вроде возраста, длительности, темы или предметов, если они есть в контексте. "
+        "Не ограничивайся простым повторением одной строки описания. "
         "Если точный фильм не найден, но есть похожие варианты — не говори, что фильма точно нет, "
         "а предложи похожие названия и попроси уточнить. "
         "Никогда не придумывай описание фильма, которого нет в контексте."
@@ -67,6 +81,8 @@ _INTENT_INSTRUCTIONS: dict[str, str] = {
     "franchise_info": (
         "Пользователь интересуется франшизой. "
         "Отвечай по данным из раздела франшизы. "
+        "Не пиши формулировки вроде «на сайте указано», «на странице франшизы», «на разных страницах сайта». "
+        "Если по стоимости или условиям есть несколько значений, сообщай это как факт напрямую: например, что сумма зависит от территории и в данных встречаются разные ориентиры. "
         "В конце предложи оставить заявку если вопрос ведёт к покупке."
     ),
     "competitor_compare": (
@@ -77,7 +93,8 @@ _INTENT_INSTRUCTIONS: dict[str, str] = {
         "Не добавляй точные цифры и сроки, если пользователь сам не просил числовое сравнение. "
         "Не делай выводы по цифрам, которых явно нет в таблице сравнения. "
         "Если по одной метрике в данных встречаются разные числа, прямо скажи, что цифры различаются в зависимости от раздела, и не выбирай случайное одно значение. "
-        "Не оформляй ответ markdown-списком со звёздочками. Используй короткий абзац или строки без '*'."
+        "Не оформляй ответ markdown-списком со звёздочками. Используй короткий абзац или строки без '*'. "
+        "Если в контексте есть исследование рынка и конкурентов, используй его и не говори, что информации о конкурентах нет."
     ),
     "lead_booking": (
         "Пользователь хочет записаться или оставить контакт. "
@@ -110,6 +127,19 @@ def _build_system_prompt(context: str, intent: str) -> str:
     return base
 
 
+def _is_explicit_movie_request(text: str) -> bool:
+    lower = (text or "").lower().replace("ё", "е").strip()
+    return any(hint in lower for hint in _EXPLICIT_MOVIE_REQUEST_HINTS)
+
+
+def _needs_movie_title_clarification(user_text: str, title_query: str) -> bool:
+    normalized_query = " ".join((title_query or "").lower().replace("ё", "е").split())
+    if normalized_query in _GENERIC_MOVIE_REQUEST_VALUES:
+        return True
+    lower = (user_text or "").lower().replace("ё", "е")
+    return any(hint in lower for hint in ("конкретному фильму", "конкретный фильм", "о конкретном фильме"))
+
+
 async def generate_answer(
     db: AsyncSession,
     telegram_user_id: int,
@@ -136,6 +166,23 @@ async def generate_answer(
     elif intent == "movie_details":
         title_query = extract_movie_title_candidate(user_text) or user_text
         title_query = title_query.strip()
+        if _needs_movie_title_clarification(user_text, title_query):
+            response_text = (
+                "Напишите название фильма, и я расскажу о нём подробнее.\n\n"
+                "Например: «Бангкок», «Париж» или «Время первых»."
+            )
+            updated_state = append_history(
+                {"params": merge_params(state.get("params", {}), new_params), "history": history},
+                user_text=user_text,
+                assistant_text=response_text,
+            )
+            await update_state(
+                db,
+                telegram_user_id,
+                intent,
+                updated_state,
+            )
+            return response_text
         movie = await find_movie_by_title(db, title_query)
 
         if movie:
@@ -168,6 +215,26 @@ async def generate_answer(
                     db,
                     telegram_user_id,
                     intent,
+                    updated_state,
+                )
+                return response_text
+
+            if not _is_explicit_movie_request(user_text):
+                response_text = (
+                    "Не совсем понял запрос.\n\n"
+                    "Могу помочь подобрать фильм, рассказать о компании, ответить по франшизе "
+                    "или подсказать по конкретному фильму.\n"
+                    "Напишите, что вам интересно."
+                )
+                updated_state = append_history(
+                    {"params": merge_params(state.get("params", {}), new_params), "history": history},
+                    user_text=user_text,
+                    assistant_text=response_text,
+                )
+                await update_state(
+                    db,
+                    telegram_user_id,
+                    "general_chat",
                     updated_state,
                 )
                 return response_text

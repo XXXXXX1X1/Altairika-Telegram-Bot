@@ -13,24 +13,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/01_product_brief.md` — цели, персоны, скоуп
 - `docs/02_user_scenarios.md` — пользовательские флоу (источник истины для UX-логики)
 - `docs/03_ux_design.md` — устройство всех экранов, правила навигации, тон бота
-- `docs/05_architecture.md` — стек, компоненты, структура модулей
-- `docs/06_roadmap.md` — порядок реализации по фазам с чеклистами
+- `docs/04_architecture.md` — стек, компоненты, структура модулей, AI-флоу
+- `docs/05_roadmap.md` — дорожная карта по фазам, статус реализации
 
-Рабочая и служебная документация вынесена в `docs/work/`:
+Рабочая и служебная документация в `docs/work/`:
 
-- `docs/work/04_data_model.md` — все сущности БД с полями
-- `docs/work/07_code_review.md` — результаты код-ревью
-- `docs/work/08_claude_code_workflow.md` — workflow разработки
-- `docs/work/09_ai_assistant.md` — AI-ассистент: реализация, модули, сценарии
-- `docs/work/10_company_knowledge.md` — база знаний компании для AI
-- `docs/work/altairika_market_research_2026-04-08.md` — исследование конкурентов и рынка
+- `docs/work/data_model.md` — все сущности БД с полями
+- `docs/work/ai_assistant.md` — AI-ассистент: реализация, модули, сценарии, трейс диалога
+- `docs/work/ai_service.md` — конфигурация AI: промпты, модели, формат контекста
+- `docs/work/code_review.md` — результаты код-ревью
+- `docs/work/architecture_review.md` — профессиональный ревью архитектуры
+- `docs/work/workflow.md` — workflow разработки с Claude Code
+- `docs/work/company_knowledge.md` — **[СЛУЖЕБНЫЙ]** база знаний компании (читается ботом)
+- `docs/work/market_research.md` — **[СЛУЖЕБНЫЙ]** исследование конкурентов (читается ботом)
 
 ## Стек и ключевые решения
 
 - **Python 3.11+**, **aiogram 3.x** (async, FSM, текущий режим запуска: polling)
 - **PostgreSQL** + **SQLAlchemy (async)** + **Alembic** для миграций
 - **Docker + docker-compose** (бот + PostgreSQL)
-- LLM не используется. Раздел FAQ — статические данные из БД.
+- **AI-ассистент** через OpenRouter (intent routing + генерация ответов); свободный текст → AI pipeline
 - Каталог загружается автопарсером через Tilda Store API со страницы `https://altairika.ru/catalog_full`.
 
 ## Структура модулей (планируемая)

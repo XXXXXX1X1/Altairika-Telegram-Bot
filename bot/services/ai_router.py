@@ -1,7 +1,7 @@
 """Intent router: определяет намерение пользователя по эвристикам и скорингу."""
 import re
 
-from bot.services.ai_catalog import extract_movie_title_candidate
+from bot.services.ai_catalog import extract_movie_title_candidate, extract_params as extract_params_regex
 
 _DEFAULT_INTENT = "general_chat"
 
@@ -9,6 +9,14 @@ _GENERAL_CHAT_PHRASES = (
     "привет", "здравствуйте", "добрый день", "добрый вечер", "доброе утро",
     "хай", "hello", "начнем", "начнём", "поговорим", "что ты умеешь",
     "что умеешь", "помоги", "помощь",
+)
+_NEUTRAL_ACK_PHRASES = (
+    "понятно", "ясно", "хорошо", "спасибо", "благодарю", "понял",
+    "поняла", "ок", "окей", "ладно", "ясненько",
+)
+_NEUTRAL_NEGATIVE_PHRASES = (
+    "нет", "не надо", "не нужно", "не интересно", "неа", "не хочу",
+    "не сейчас", "не, спасибо",
 )
 
 _LEAD_BOOKING_PHRASES = (
@@ -34,6 +42,8 @@ _COMPETITOR_PHRASES = (
     "лучше чем", "чем вы лучше", "сравни", "сравните",
     "чем отличаетесь", "другие компании", "аналоги", "альтернативы",
     "сравнение", "сопоставь", "в чем отличие", "в чем разница",
+    "анализ конкурентов", "про конкурентов", "рынок и конкуренты",
+    "анализ рынка", "конкурентный анализ", "разбор конкурентов",
 )
 _COMPETITOR_NAMES = ("vizerra", "vr concept", "vr arena")
 _FRANCHISE_PHRASES = (
@@ -67,6 +77,7 @@ _MOVIE_SELECTION_PHRASES = (
 _MOVIE_SELECTION_THEME_WORDS = (
     "космос", "природа", "история", "животные", "наука", "физика",
     "биология", "география", "английский", "обж", "пдд", "динозавры",
+    "путешествие", "путешествия", "города", "страны", "транспорт", "машины",
 )
 _MOVIE_AUDIENCE_WORDS = (
     "класс", "класса", "классу", "возраст", "лет", "дошкольник", "дошкольники",
@@ -77,6 +88,7 @@ _MOVIE_DETAILS_PHRASES = (
     "расскажи про фильм", "расскажи о фильме", "что за фильм", "описание фильма",
     "информация о фильме", "о фильме", "про фильм", "сколько длится",
     "для какого возраста", "про что фильм", "что это за фильм",
+    "по конкретному фильму", "о конкретном фильме", "конкретный фильм",
 )
 _MOVIE_TITLE_EXCLUDE = {
     "цена", "цены", "стоимость", "контакты", "адрес", "где", "как", "почему",
@@ -85,7 +97,10 @@ _MOVIE_TITLE_EXCLUDE = {
     "вопрос", "ответ", "условия", "инвестиции", "заявка", "заявку",
     "оставить", "оставлю", "оставьте", "хочу", "привет", "здравствуйте",
     "добрый", "день", "вечер", "утро", "поговорить", "помоги",
+    "понятно", "ясно", "хорошо", "спасибо", "благодарю", "понял", "поняла",
+    "ок", "окей", "ладно", "нет", "не", "неа", "интересно", "надо",
     "контент", "отличия", "отличаетесь", "разница", "конкуренты", "конкурентах",
+    "конкурентами", "конкурент", "сравни", "сравните", "сравнение", "анализ",
     "лучше", "хуже", "сравнение",
 }
 
@@ -125,6 +140,9 @@ def _has_duration_pattern(text: str) -> bool:
 
 
 def _looks_like_movie_selection(text: str) -> bool:
+    extracted = extract_params_regex(text, {})
+    if extracted.get("theme"):
+        return True
     if _contains_any(text, _MOVIE_SELECTION_PHRASES):
         return True
     if text.startswith("тема "):
@@ -144,6 +162,9 @@ def _looks_like_movie_selection(text: str) -> bool:
 
 
 def _looks_like_movie_details(text: str) -> bool:
+    extracted = extract_params_regex(text, {})
+    if extracted.get("theme"):
+        return False
     if _contains_any(text, _MOVIE_DETAILS_PHRASES):
         return True
 
@@ -197,6 +218,8 @@ def _score_competitor_compare(text: str) -> int:
         score += 4
     if any(name in text for name in _COMPETITOR_NAMES):
         score += 4
+    if "конкурент" in text and any(word in text for word in ("анализ", "разбор", "рынок")):
+        score += 4
     if "альтаирика" in text and any(word in text for word in ("лучше", "отлич", "разниц", "сравн")):
         score += 3
     return score
@@ -233,14 +256,21 @@ def _score_general_chat(text: str) -> int:
     score = 0
     if _contains_any(text, _GENERAL_CHAT_PHRASES):
         score += 4
+    if text in _NEUTRAL_ACK_PHRASES:
+        score += 5
+    if text in _NEUTRAL_NEGATIVE_PHRASES:
+        score += 5
     tokens = _tokens(text)
-    if len(tokens) <= 2 and any(token in {"привет", "здравствуйте", "помоги"} for token in tokens):
+    if len(tokens) <= 3 and any(token in {"привет", "здравствуйте", "помоги", "понятно", "ясно", "спасибо", "понял", "нет"} for token in tokens):
         score += 4
     return score
 
 
 def _score_movie_selection(text: str) -> int:
     score = 0
+    extracted = extract_params_regex(text, {})
+    if extracted.get("theme"):
+        score += 4
     if _contains_any(text, _MOVIE_SELECTION_PHRASES):
         score += 4
     if text.startswith("тема "):
@@ -265,6 +295,8 @@ def _score_movie_selection(text: str) -> int:
 
 def _score_movie_details(text: str) -> int:
     score = 0
+    if _score_competitor_compare(text) > 0:
+        return 0
     if _contains_any(text, _MOVIE_DETAILS_PHRASES):
         score += 4
     tokens = _tokens(text)
@@ -302,8 +334,9 @@ def detect_intent(text: str) -> str:
     if _looks_like_movie_details(normalized):
         scores["movie_details"] += 2
 
+    is_neutral_reply = normalized in _NEUTRAL_ACK_PHRASES or normalized in _NEUTRAL_NEGATIVE_PHRASES
     non_general_scores = {k: v for k, v in scores.items() if k != "general_chat"}
-    if any(score > 0 for score in non_general_scores.values()) and len(_tokens(normalized)) > 1:
+    if not is_neutral_reply and any(score > 0 for score in non_general_scores.values()) and len(_tokens(normalized)) > 1:
         scores["general_chat"] = 0
 
     # В конфликте между подбором и карточкой фильма отдаём приоритет подбору,

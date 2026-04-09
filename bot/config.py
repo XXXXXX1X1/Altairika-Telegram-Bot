@@ -8,7 +8,8 @@ class Settings(BaseSettings):
 
     # AI / OpenRouter
     OPENROUTER_API_KEY: str = ""
-    AI_MODEL: str = "google/gemini-2.0-flash-001"
+    AI_MODEL: str = "openai/gpt-4o-mini"
+    AI_ROUTING_MODEL: str = "openai/gpt-4.1-nano"
     AI_MAX_TOKENS: int = 600
     AI_SESSION_TTL_MINUTES: int = 30  # через сколько минут сбрасывать контекст диалога
 

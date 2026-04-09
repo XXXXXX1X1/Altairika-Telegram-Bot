@@ -20,7 +20,7 @@ _THEME_KEYWORDS: dict[str, list[str]] = {
     "динозавры": ["динозавр", "динозавры", "динозавров", "доистор", "юрский"],
     "физика": ["физика", "наука", "эксперимент", "энергия"],
     "биология": ["биология", "организм", "клетка", "тело", "анатомия"],
-    "география": ["география", "страна", "континент", "путешествие", "мир"],
+    "география": ["география", "страна", "континент", "путешествие", "путешествия", "путешеств", "мир"],
     "английский": ["английский", "english", "язык", "иностранный"],
     "обж": ["обж", "безопасность", "пожар", "первая помощь"],
     "пдд": ["пдд", "дорога", "правила", "транспорт"],
@@ -233,7 +233,7 @@ async def find_similar_movies(
     scored = []
     for item in items:
         score = _title_match_score(item, query_norm)
-        if score >= 0.38:
+        if score >= 0.55:
             scored.append((item, score))
 
     scored.sort(key=lambda pair: pair[1], reverse=True)
@@ -520,6 +520,7 @@ def format_films_for_prompt(items: list[CatalogItem]) -> str:
 
 def format_movie_for_prompt(item: CatalogItem) -> str:
     """Форматирует одну карточку фильма для контекста модели."""
+    meta = item_metadata(item)
     parts = [f"Название: {item.title}"]
     if item.age_rating:
         parts.append(f"Возраст: {item.age_rating}")
@@ -527,8 +528,14 @@ def format_movie_for_prompt(item: CatalogItem) -> str:
         parts.append(f"Длительность: {item.duration}")
     if item.short_description:
         parts.append(f"Краткое описание: {item.short_description}")
-    elif item.description:
+    if item.description:
         parts.append(f"Описание: {item.description}")
+    if meta["genres"]:
+        parts.append(f"Предметы: {', '.join(meta['genres'])}")
+    if meta["themes"]:
+        parts.append(f"Тема: {', '.join(meta['themes'])}")
+    if meta["languages"]:
+        parts.append(f"Языки: {', '.join(meta['languages'])}")
     return "\n".join(parts)
 
 

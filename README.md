@@ -112,7 +112,8 @@ POSTGRES_PASSWORD=secret
 
 # AI-ассистент (опционально — без ключа бот работает без AI)
 OPENROUTER_API_KEY=sk-or-...
-AI_MODEL=google/gemini-2.0-flash-001
+AI_MODEL=openai/gpt-4o-mini
+AI_ROUTING_MODEL=openai/gpt-4.1-nano
 ```
 
 > Узнать свой `ADMIN_TELEGRAM_ID` можно через [@userinfobot](https://t.me/userinfobot).
@@ -259,7 +260,8 @@ python3 -m bot
 | Переменная | По умолчанию | Описание |
 |------------|-------------|---------|
 | `OPENROUTER_API_KEY` | — | Ключ OpenRouter (обязателен для AI) |
-| `AI_MODEL` | `google/gemini-2.0-flash-001` | Модель через OpenRouter |
+| `AI_MODEL` | `openai/gpt-4o-mini` | Модель для финального ответа |
+| `AI_ROUTING_MODEL` | `openai/gpt-4.1-nano` | Модель для routing / JSON / извлечения параметров |
 | `AI_MAX_TOKENS` | `600` | Максимум токенов в ответе |
 | `AI_SESSION_TTL_MINUTES` | `30` | TTL сессии диалога (мин.) |
 
@@ -328,7 +330,8 @@ alembic revision --autogenerate -m "описание"
 | `POSTGRES_USER` | да (Docker) | Пользователь PostgreSQL |
 | `POSTGRES_PASSWORD` | да (Docker) | Пароль PostgreSQL |
 | `OPENROUTER_API_KEY` | нет | Ключ OpenRouter для AI-ассистента |
-| `AI_MODEL` | нет | Модель LLM (по умолчанию `google/gemini-2.0-flash-001`) |
+| `AI_MODEL` | нет | Модель финального ответа (по умолчанию `openai/gpt-4o-mini`) |
+| `AI_ROUTING_MODEL` | нет | Модель routing / JSON (по умолчанию `openai/gpt-4.1-nano`) |
 | `AI_MAX_TOKENS` | нет | Лимит токенов ответа (по умолчанию `600`) |
 | `AI_SESSION_TTL_MINUTES` | нет | TTL сессии диалога (по умолчанию `30`) |
 

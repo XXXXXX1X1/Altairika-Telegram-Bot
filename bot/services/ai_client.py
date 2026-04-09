@@ -29,6 +29,7 @@ async def call_llm(
     history: list[dict[str, str]] | None = None,
     *,
     max_tokens: int | None = None,
+    model: str | None = None,
 ) -> str | None:
     """Вызывает модель и возвращает текст ответа или None при ошибке."""
     if not settings.OPENROUTER_API_KEY:
@@ -36,7 +37,8 @@ async def call_llm(
         return None
 
     client = _get_client()
-    logger.info("LLM вызов: модель=%s prompt_len=%d", settings.AI_MODEL, len(system_prompt))
+    target_model = model or settings.AI_MODEL
+    logger.info("LLM вызов: модель=%s prompt_len=%d", target_model, len(system_prompt))
     messages = [{"role": "system", "content": system_prompt}]
     if history:
         messages.extend(history)
@@ -44,7 +46,7 @@ async def call_llm(
 
     try:
         response = await client.chat.completions.create(
-            model=settings.AI_MODEL,
+            model=target_model,
             max_tokens=max_tokens or settings.AI_MAX_TOKENS,
             messages=messages,
         )
@@ -52,7 +54,7 @@ async def call_llm(
         logger.info("LLM ответ получен: %d символов", len(text) if text else 0)
         return text
     except APITimeoutError:
-        logger.warning("OpenRouter timeout для модели %s", settings.AI_MODEL)
+        logger.warning("OpenRouter timeout для модели %s", target_model)
         return None
     except APIError as e:
         logger.error("OpenRouter API error status=%s body=%s", getattr(e, 'status_code', '?'), str(e)[:300])
@@ -89,6 +91,7 @@ async def call_llm_json(
     history: list[dict[str, str]] | None = None,
     *,
     max_tokens: int = 250,
+    model: str | None = None,
 ) -> dict | None:
     """Вызывает модель и пытается вернуть JSON-объект."""
     text = await call_llm(
@@ -96,6 +99,7 @@ async def call_llm_json(
         user_message,
         history=history,
         max_tokens=max_tokens,
+        model=model or settings.AI_ROUTING_MODEL,
     )
     if not text:
         return None
